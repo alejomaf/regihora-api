@@ -1,0 +1,62 @@
+{
+  "name": "@salidia/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Salidia backend API.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main.js",
+    "lint": "eslint .",
+    "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
+    "migration:run": "npm run typeorm -- migration:run",
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "migration:show": "npm run typeorm -- migration:show",
+    "migration:generate": "npm run typeorm -- migration:generate",
+    "test": "jest --config jest.config.ts",
+    "test:watch": "jest --config jest.config.ts --watch",
+    "test:cov": "jest --config jest.config.ts --coverage",
+    "test:e2e": "jest --config test/jest-e2e.config.ts",
+    "check": "npm run lint && npm run test && npm run test:e2e && npm run build"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.1.21",
+    "@nestjs/config": "4.0.4",
+    "@nestjs/core": "11.1.21",
+    "@nestjs/jwt": "11.0.2",
+    "@nestjs/platform-express": "11.1.21",
+    "@nestjs/typeorm": "11.0.1",
+    "argon2": "0.44.0",
+    "csv-parse": "6.2.1",
+    "dotenv": "17.4.2",
+    "exceljs": "^4.4.0",
+    "pg": "8.20.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "typeorm": "0.3.29"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@nestjs/cli": "11.0.21",
+    "@nestjs/testing": "11.1.21",
+    "@swc/cli": "0.8.1",
+    "@swc/core": "1.15.33",
+    "@swc/jest": "0.2.39",
+    "@types/express": "5.0.6",
+    "@types/jest": "30.0.0",
+    "@types/node": "24.10.2",
+    "@types/supertest": "6.0.3",
+    "eslint": "10.4.0",
+    "jest": "30.4.2",
+    "supertest": "7.2.2",
+    "ts-node": "10.9.2",
+    "tsconfig-paths": "4.2.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.59.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
