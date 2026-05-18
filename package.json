@@ -19,6 +19,7 @@
     "test:watch": "jest --config jest.config.ts --watch",
     "test:cov": "jest --config jest.config.ts --coverage",
     "test:e2e": "jest --config test/jest-e2e.config.ts",
+    "test:e2e:full-flow": "SALIDIA_E2E_DATABASE=true jest --config test/jest-e2e.config.ts test/full-attendance-flow.e2e-spec.ts --runInBand",
     "check": "npm run lint && npm run test && npm run test:e2e && npm run build"
   },
   "dependencies": {
