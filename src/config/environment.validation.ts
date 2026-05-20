@@ -22,6 +22,7 @@ export type EnvironmentVariables = {
   JWT_REFRESH_TOKEN_TTL_SECONDS: number;
   JWT_ISSUER: string;
   JWT_AUDIENCE: string;
+  CORS_ALLOWED_ORIGINS: string[];
 };
 
 type RawEnvironment = Record<string, unknown>;
@@ -45,8 +46,16 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
     'DATABASE_ENABLED',
     nodeEnvironment !== 'test',
   );
+  const defaultCorsOrigins =
+    nodeEnvironment === 'production'
+      ? ''
+      : 'http://localhost:4200,http://127.0.0.1:4200';
 
   return {
+    CORS_ALLOWED_ORIGINS: parseStringList(
+      config.CORS_ALLOWED_ORIGINS,
+      defaultCorsOrigins,
+    ),
     DATABASE_ENABLED: databaseEnabled,
     DATABASE_HOST: parseNonEmptyString(
       config.DATABASE_HOST,
@@ -181,6 +190,19 @@ function parseNonEmptyString(
   }
 
   return rawValue.trim();
+}
+
+function parseStringList(value: unknown, fallback: string): string[] {
+  const rawValue = value ?? fallback;
+
+  if (typeof rawValue !== 'string') {
+    throw new Error('CORS_ALLOWED_ORIGINS must be a comma-separated string.');
+  }
+
+  return rawValue
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 }
 
 function parseEnumValue<const T extends readonly string[]>(

@@ -43,6 +43,7 @@ function getEnvironmentFromConfig(
   configService: ConfigService<EnvironmentVariables, true>,
 ): EnvironmentVariables {
   return {
+    CORS_ALLOWED_ORIGINS: configService.get('CORS_ALLOWED_ORIGINS', { infer: true }),
     DATABASE_ENABLED: configService.get('DATABASE_ENABLED', { infer: true }),
     DATABASE_HOST: configService.get('DATABASE_HOST', { infer: true }),
     DATABASE_LOGGING: configService.get('DATABASE_LOGGING', { infer: true }),

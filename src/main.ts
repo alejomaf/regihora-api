@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import type { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { text } from 'express';
@@ -16,8 +17,12 @@ async function bootstrap(): Promise<void> {
   const logLevel = configService.get('LOG_LEVEL', { infer: true });
   const port = configService.get('PORT', { infer: true });
   const serviceName = configService.get('SERVICE_NAME', { infer: true });
+  const allowedCorsOrigins = configService.get('CORS_ALLOWED_ORIGINS', {
+    infer: true,
+  });
 
   app.useLogger(getEnabledLogLevels(logLevel));
+  app.enableCors(createCorsOptions(allowedCorsOrigins));
   app.use(text({ limit: '1mb', type: ['text/csv', 'text/plain'] }));
   app.enableShutdownHooks();
 
@@ -27,3 +32,28 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap();
+
+function createCorsOptions(allowedOrigins: string[]): CorsOptions {
+  return {
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'Idempotency-Key',
+      'X-Salidia-Device-Token',
+      'X-Salidia-Tenant-Id',
+    ],
+    credentials: false,
+    exposedHeaders: ['Content-Disposition'],
+    maxAge: 600,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    optionsSuccessStatus: 204,
+    origin: (origin, callback) => {
+      if (origin === undefined || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Origin is not allowed by CORS.'), false);
+    },
+  };
+}
