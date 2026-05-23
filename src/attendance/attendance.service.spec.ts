@@ -430,6 +430,136 @@ describe(AttendanceService.name, () => {
     ).rejects.toThrow(ConflictException);
   });
 
+  it('rejects expired QR challenge screenshots', async () => {
+    const deviceTokenHash = hashSecret('device-token-123456789012345678901234');
+    const qrChallenge = makeQrChallenge(deviceTokenHash, {
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+      issuedAt: new Date(Date.now() - 61_000).toISOString(),
+    });
+    const service = makeService({
+      attendanceEventRepository: {
+        findOne: jest.fn().mockResolvedValue(null),
+        findOneBy: jest.fn().mockResolvedValue(null),
+      },
+      deviceRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makeDevice({
+            deviceTokenHash,
+            status: DeviceStatus.ACTIVE,
+          }),
+        ),
+      },
+      policyRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makePolicy({
+            allowedWorkplaceIds: ['workplace-a'],
+            geolocationRequired: false,
+            ipAllowlist: [],
+            mode: AttendancePolicyMode.ONSITE_QR,
+          }),
+        ),
+      },
+    });
+
+    await expect(
+      service.punch(
+        {
+          action: PunchAction.CLOCK_IN,
+          employeeId: 'employee-a',
+          qrChallenge,
+          source: AttendanceSource.FIXED_DYNAMIC_QR,
+          workplaceId: 'workplace-a',
+        },
+        makePunchContext(),
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects QR challenges signed by a different device token', async () => {
+    const deviceTokenHash = hashSecret('device-token-123456789012345678901234');
+    const service = makeService({
+      attendanceEventRepository: {
+        findOne: jest.fn().mockResolvedValue(null),
+        findOneBy: jest.fn().mockResolvedValue(null),
+      },
+      deviceRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makeDevice({
+            deviceTokenHash,
+            status: DeviceStatus.ACTIVE,
+          }),
+        ),
+      },
+      policyRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makePolicy({
+            allowedWorkplaceIds: ['workplace-a'],
+            geolocationRequired: false,
+            ipAllowlist: [],
+            mode: AttendancePolicyMode.ONSITE_QR,
+          }),
+        ),
+      },
+    });
+
+    await expect(
+      service.punch(
+        {
+          action: PunchAction.CLOCK_IN,
+          employeeId: 'employee-a',
+          qrChallenge: makeQrChallenge(
+            hashSecret('other-device-token-123456789012345'),
+          ),
+          source: AttendanceSource.FIXED_DYNAMIC_QR,
+          workplaceId: 'workplace-a',
+        },
+        makePunchContext(),
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('rejects QR challenges displayed for a different workplace', async () => {
+    const deviceTokenHash = hashSecret('device-token-123456789012345678901234');
+    const service = makeService({
+      attendanceEventRepository: {
+        findOne: jest.fn().mockResolvedValue(null),
+        findOneBy: jest.fn().mockResolvedValue(null),
+      },
+      deviceRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makeDevice({
+            deviceTokenHash,
+            status: DeviceStatus.ACTIVE,
+            workplaceId: 'workplace-b',
+          }),
+        ),
+      },
+      policyRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makePolicy({
+            allowedWorkplaceIds: ['workplace-a'],
+            geolocationRequired: false,
+            ipAllowlist: [],
+            mode: AttendancePolicyMode.ONSITE_QR,
+          }),
+        ),
+      },
+    });
+
+    await expect(
+      service.punch(
+        {
+          action: PunchAction.CLOCK_IN,
+          employeeId: 'employee-a',
+          qrChallenge: makeQrChallenge(deviceTokenHash),
+          source: AttendanceSource.FIXED_DYNAMIC_QR,
+          workplaceId: 'workplace-a',
+        },
+        makePunchContext(),
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
   it('rejects fixed QR punches when the employee policy does not allow QR', async () => {
     const deviceTokenHash = hashSecret('device-token-123456789012345678901234');
     const service = makeService({
@@ -547,12 +677,16 @@ function makePunchFingerprint(payload: {
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 
-function makeQrChallenge(deviceTokenHash: string): QrChallengePayload {
+function makeQrChallenge(
+  deviceTokenHash: string,
+  overrides: Partial<Omit<QrChallengePayload, 'signature'>> = {},
+): QrChallengePayload {
   const unsignedChallenge = {
     devicePublicId: 'qrd_public123456789',
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     issuedAt: new Date().toISOString(),
     nonce: 'nonce-123456789012345',
+    ...overrides,
   };
 
   return {
