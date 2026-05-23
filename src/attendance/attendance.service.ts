@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 import {
   BadRequestException,
@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -38,6 +39,7 @@ import {
   AttendancePunchDto,
   DeviceContextDto,
   LocationEvidenceDto,
+  TurnstilePunchCreateRequestDto,
 } from './dto/attendance-punch.dto';
 import { isIpAllowed } from './ip-allowlist';
 
@@ -70,12 +72,27 @@ type ValidatedQrChallenge = {
   device: DeviceEntity;
 };
 
+type TurnstilePunchHttpContext = {
+  ipAddress: string | null;
+  userAgent: string | null;
+};
+
+type ParsedTurnstilePunchRequest = {
+  scannedCode: string;
+  scanId: string;
+  deviceContext: DeviceContextDto;
+};
+
 const allowedSourcesByMode: Record<AttendancePolicyMode, AttendanceSource[]> = {
   [AttendancePolicyMode.HYBRID]: [
     AttendanceSource.REMOTE,
+    AttendanceSource.IN_PERSON,
     AttendanceSource.FIXED_DYNAMIC_QR,
   ],
-  [AttendancePolicyMode.ONSITE_QR]: [AttendanceSource.FIXED_DYNAMIC_QR],
+  [AttendancePolicyMode.ONSITE_QR]: [
+    AttendanceSource.IN_PERSON,
+    AttendanceSource.FIXED_DYNAMIC_QR,
+  ],
   [AttendancePolicyMode.REMOTE]: [AttendanceSource.REMOTE],
 };
 
@@ -180,6 +197,104 @@ export class AttendanceService {
     return toAttendancePunchDto(await this.attendanceEventRepository.save(event));
   }
 
+  async turnstilePunch(
+    qrDeviceId: string,
+    deviceToken: unknown,
+    request: TurnstilePunchCreateRequestDto,
+    context: TurnstilePunchHttpContext,
+  ): Promise<AttendancePunchDto> {
+    const parsedRequest = parseTurnstilePunchRequest(request);
+    const device = await this.getActiveTurnstileDeviceByToken(qrDeviceId, deviceToken);
+    const employee = await this.getActiveEmployeeByTurnstileCode(
+      device.tenantId,
+      parsedRequest.scannedCode,
+    );
+
+    if (employee.userId === null) {
+      throw new ForbiddenException('Employee has no user account for attendance punches.');
+    }
+
+    const idempotencyKey = getTurnstileIdempotencyKey(device.id, parsedRequest.scanId);
+    const fingerprint = getTurnstilePunchFingerprint(device.id, parsedRequest);
+    const existingEvent = await this.findExistingIdempotentEvent(
+      device.tenantId,
+      employee.userId,
+      idempotencyKey,
+    );
+
+    if (existingEvent !== null) {
+      if (existingEvent.metadata.idempotencyFingerprint !== fingerprint) {
+        throw new ConflictException('Idempotency key was already used.');
+      }
+
+      return toAttendancePunchDto(existingEvent);
+    }
+
+    const tenant = await this.getTenant(device.tenantId);
+    const policy = await this.getActivePolicy(device.tenantId, employee.attendancePolicyId);
+    const workplace = await this.getValidatedWorkplace(
+      device.tenantId,
+      {
+        action: PunchAction.CLOCK_IN,
+        deviceContext: parsedRequest.deviceContext,
+        employeeId: employee.id,
+        locationEvidence: null,
+        qrChallenge: null,
+        qrChallengeToken: null,
+        source: AttendanceSource.IN_PERSON,
+        workplaceId: device.workplaceId,
+      },
+      policy,
+    );
+
+    if (workplace === null) {
+      throw new NotFoundException('Turnstile workplace not found.');
+    }
+
+    const expectedTimezone = workplace.timezone ?? tenant.timezone;
+
+    validateTimezone(expectedTimezone, 'tenant/workplace timezone');
+    validateDeviceTimezone(parsedRequest.deviceContext.timezone, expectedTimezone);
+    this.validateSource(policy, AttendanceSource.IN_PERSON);
+    this.validateGeolocation(policy, null, true);
+    this.validateIpAllowlist(policy, context.ipAddress);
+
+    const lastEvent = await this.getLastPunchEvent(device.tenantId, employee.id);
+    const action = getNextTurnstileAction(getAttendanceSessionState(lastEvent?.action));
+    const now = new Date();
+    const event = this.attendanceEventRepository.create({
+      action,
+      createdByUserId: employee.userId,
+      deviceId: device.id,
+      employeeId: employee.id,
+      eventType: AttendanceEventType.PUNCH,
+      gpsProvided: false,
+      gpsRequiredByPolicy: false,
+      idempotencyKey,
+      metadata: {
+        deviceContext: parsedRequest.deviceContext,
+        idempotencyFingerprint: fingerprint,
+        ipAddress: context.ipAddress,
+        localDate: formatLocalDate(now, expectedTimezone),
+        policyId: policy.id,
+        timezone: expectedTimezone,
+        turnstile: {
+          devicePublicId: device.publicId,
+          scanId: parsedRequest.scanId,
+          scannedCodeHash: hashTurnstileCode(parsedRequest.scannedCode),
+        },
+        userAgent: context.userAgent,
+      },
+      occurredAt: now,
+      qrChallengeId: null,
+      source: AttendanceSource.IN_PERSON,
+      tenantId: device.tenantId,
+      workplaceId: workplace.id,
+    });
+
+    return toAttendancePunchDto(await this.attendanceEventRepository.save(event));
+  }
+
   private async findExistingIdempotentEvent(
     tenantId: string,
     userId: string,
@@ -217,6 +332,55 @@ export class AttendanceService {
     return employee;
   }
 
+  private async getActiveEmployeeByTurnstileCode(
+    tenantId: string,
+    scannedCode: string,
+  ): Promise<EmployeeEntity> {
+    const employee = await this.employeeRepository.findOneBy({
+      tenantId,
+      turnstileCodeHash: hashTurnstileCode(scannedCode),
+    });
+
+    if (employee?.status !== EmployeeStatus.ACTIVE) {
+      throw new ForbiddenException('Turnstile credential is not active.');
+    }
+
+    return employee;
+  }
+
+  private async getActiveTurnstileDeviceByToken(
+    qrDeviceId: string,
+    deviceToken: unknown,
+  ): Promise<DeviceEntity & { deviceTokenHash: string }> {
+    const parsedDeviceToken = parseRequiredString(
+      deviceToken,
+      'X-Regihora-Device-Token',
+      256,
+    );
+    const device = await this.deviceRepository.findOneBy({ id: qrDeviceId });
+
+    if (device === null) {
+      throw new NotFoundException('Turnstile device not found.');
+    }
+
+    if (
+      device.deviceTokenHash === null ||
+      !secretsMatch(hashSecret(parsedDeviceToken), device.deviceTokenHash)
+    ) {
+      throw new UnauthorizedException('Invalid device token.');
+    }
+
+    if (device.status !== DeviceStatus.ACTIVE) {
+      throw new ConflictException('Turnstile device is not active.');
+    }
+
+    if (device.type !== DeviceType.TURNSTILE) {
+      throw new ConflictException('Device is not configured as a turnstile.');
+    }
+
+    return device as DeviceEntity & { deviceTokenHash: string };
+  }
+
   private async getTenant(tenantId: string): Promise<TenantEntity> {
     const tenant = await this.tenantRepository.findOneBy({ id: tenantId });
 
@@ -252,6 +416,10 @@ export class AttendanceService {
     request: ParsedPunchRequest,
     policy: AttendancePolicyEntity,
   ): Promise<WorkplaceEntity | null> {
+    if (request.source === AttendanceSource.IN_PERSON && request.workplaceId === null) {
+      throw new BadRequestException('workplaceId is required for IN_PERSON punches.');
+    }
+
     if (request.source === AttendanceSource.FIXED_DYNAMIC_QR && request.workplaceId === null) {
       throw new BadRequestException('workplaceId is required for ONSITE_QR punches.');
     }
@@ -297,7 +465,12 @@ export class AttendanceService {
   private validateGeolocation(
     policy: AttendancePolicyEntity,
     locationEvidence: LocationEvidenceDto | null,
+    trustedWorkplaceDevice = false,
   ): void {
+    if (trustedWorkplaceDevice) {
+      return;
+    }
+
     if (policy.geolocationRequired && locationEvidence === null) {
       throw new BadRequestException('locationEvidence is required by policy.');
     }
@@ -321,7 +494,19 @@ export class AttendanceService {
     employeeId: string,
     action: PunchAction,
   ): Promise<void> {
-    const lastEvent = await this.attendanceEventRepository.findOne({
+    const lastEvent = await this.getLastPunchEvent(tenantId, employeeId);
+    const state = getAttendanceSessionState(lastEvent?.action);
+
+    if (!isActionAllowedForState(action, state)) {
+      throw new ConflictException('Punch action is not valid for the current session.');
+    }
+  }
+
+  private async getLastPunchEvent(
+    tenantId: string,
+    employeeId: string,
+  ): Promise<AttendanceEventEntity | null> {
+    return this.attendanceEventRepository.findOne({
       order: {
         occurredAt: 'DESC',
       },
@@ -331,11 +516,6 @@ export class AttendanceService {
         tenantId,
       },
     });
-    const state = getAttendanceSessionState(lastEvent?.action);
-
-    if (!isActionAllowedForState(action, state)) {
-      throw new ConflictException('Punch action is not valid for the current session.');
-    }
   }
 
   private async validateQrChallenge(
@@ -413,6 +593,16 @@ function parsePunchRequest(
     qrChallenge: parseQrChallenge(request.qrChallenge),
     source: parseEnum(request.source, AttendanceSource, 'source'),
     workplaceId: parseOptionalString(request.workplaceId, 'workplaceId', 80),
+  };
+}
+
+function parseTurnstilePunchRequest(
+  request: TurnstilePunchCreateRequestDto,
+): ParsedTurnstilePunchRequest {
+  return {
+    deviceContext: parseDeviceContext(request.deviceContext),
+    scanId: parseRequiredString(request.scanId, 'scanId', 80),
+    scannedCode: parseRequiredString(request.scannedCode, 'scannedCode', 512),
   };
 }
 
@@ -616,6 +806,26 @@ function getPunchFingerprint(request: ParsedPunchRequest): string {
     .digest('hex');
 }
 
+function getTurnstilePunchFingerprint(
+  deviceId: string,
+  request: ParsedTurnstilePunchRequest,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        deviceContext: request.deviceContext,
+        deviceId,
+        scanId: request.scanId,
+        scannedCodeHash: hashTurnstileCode(request.scannedCode),
+      }),
+    )
+    .digest('hex');
+}
+
+function getTurnstileIdempotencyKey(deviceId: string, scanId: string): string {
+  return `turnstile:${deviceId}:${scanId}`;
+}
+
 function validateQrChallengeWindow(
   challenge: QrChallengePayload,
   rotationSeconds: number,
@@ -693,6 +903,18 @@ function isActionAllowedForState(
   }
 }
 
+function getNextTurnstileAction(state: AttendanceSessionState): PunchAction {
+  if (!state.clockedIn) {
+    return PunchAction.CLOCK_IN;
+  }
+
+  if (!state.onBreak) {
+    return PunchAction.CLOCK_OUT;
+  }
+
+  throw new ConflictException('Turnstile cannot clock out while an employee is on break.');
+}
+
 function validateDeviceTimezone(
   deviceTimezone: string | undefined,
   expectedTimezone: string,
@@ -727,6 +949,21 @@ function formatLocalDate(date: Date, timezone: string): string {
 
 function hashQrChallengeToken(token: string): string {
   return createHash('sha256').update(token).digest('hex').slice(0, 64);
+}
+
+function hashTurnstileCode(code: string): string {
+  return createHash('sha256').update(code).digest('hex');
+}
+
+function hashSecret(secret: string): string {
+  return createHash('sha256').update(secret).digest('hex');
+}
+
+function secretsMatch(actualHash: string, expectedHash: string): boolean {
+  const actual = Buffer.from(actualHash, 'hex');
+  const expected = Buffer.from(expectedHash, 'hex');
+
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

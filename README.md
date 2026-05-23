@@ -1,6 +1,6 @@
-# Salidia API
+# Regihora API
 
-NestJS backend API for Salidia.
+NestJS backend API for Regihora.
 
 ## Requirements
 

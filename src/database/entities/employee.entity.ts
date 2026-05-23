@@ -24,6 +24,9 @@ import { WorkplaceEntity } from './workplace.entity';
 @Entity({ name: 'employees' })
 @Index('idx_employees_tenant_id', ['tenantId'])
 @Index('uq_employees_tenant_email', ['tenantId', 'email'], { unique: true })
+@Index('uq_employees_tenant_turnstile_code_hash', ['tenantId', 'turnstileCodeHash'], {
+  unique: true,
+})
 export class EmployeeEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -48,6 +51,9 @@ export class EmployeeEntity {
 
   @Column({ type: 'varchar', length: 320 })
   email!: string;
+
+  @Column({ name: 'turnstile_code_hash', type: 'varchar', length: 128, nullable: true })
+  turnstileCodeHash!: string | null;
 
   @Column({
     default: EmployeeStatus.INVITED,

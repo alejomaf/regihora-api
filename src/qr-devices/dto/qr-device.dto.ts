@@ -32,6 +32,7 @@ export type QrDeviceUpdateRequestDto = {
 export type QrDeviceListQueryDto = {
   workplaceId?: unknown;
   status?: unknown;
+  type?: unknown;
 };
 
 export type QrDeviceListResponseDto = {

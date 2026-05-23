@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -47,6 +49,7 @@ type EmployeeWriteFields = {
   workplaceId: string | null;
   departmentId: string | null;
   attendancePolicyId: string | null;
+  turnstileCodeHash: string | null;
 };
 
 type EmployeeRelationFields = {
@@ -122,11 +125,13 @@ export class EmployeesService {
       email: parseRequiredEmail(request.email),
       roles: parseRoles(request.roles),
       status: EmployeeStatus.INVITED,
+      turnstileCodeHash: hashOptionalTurnstileCode(request.turnstileCode),
       workplaceId:
         parseOptionalString(request.workplaceId, 'workplaceId', 80) ?? null,
     };
 
     await this.ensureEmailAvailable(tenantId, fields.email);
+    await this.ensureTurnstileCodeAvailable(tenantId, fields.turnstileCodeHash);
     await this.ensureRelationsBelongToTenant(tenantId, fields);
 
     const employee = this.employeeRepository.create({
@@ -170,6 +175,10 @@ export class EmployeesService {
       'attendancePolicyId',
       80,
     );
+    const turnstileCodeHash =
+      request.turnstileCode === undefined
+        ? undefined
+        : hashOptionalNullableTurnstileCode(request.turnstileCode);
     const relationFields: EmployeeRelationFields = {
       attendancePolicyId,
       departmentId,
@@ -177,6 +186,11 @@ export class EmployeesService {
     };
 
     await this.ensureRelationsBelongToTenant(tenantId, relationFields);
+    await this.ensureTurnstileCodeAvailable(
+      tenantId,
+      turnstileCodeHash,
+      employee.id,
+    );
 
     if (displayName !== undefined) {
       employee.displayName = displayName;
@@ -200,6 +214,10 @@ export class EmployeesService {
 
     if (attendancePolicyId !== undefined) {
       employee.attendancePolicyId = attendancePolicyId;
+    }
+
+    if (turnstileCodeHash !== undefined) {
+      employee.turnstileCodeHash = turnstileCodeHash;
     }
 
     return toEmployeeDto(await this.employeeRepository.save(employee));
@@ -318,6 +336,9 @@ export class EmployeesService {
       email: parseRequiredEmail(getRecordValue(record, 'email')),
       roles: parseRoles(getRecordValue(record, 'roles'), [UserRole.EMPLOYEE]),
       status,
+      turnstileCodeHash: hashOptionalTurnstileCode(
+        getRecordValue(record, 'turnstileCode', 'turnstile_code', 'badgeCode', 'badge_code'),
+      ),
       workplaceId: getRecordValue(record, 'workplaceId') ?? null,
     };
 
@@ -334,11 +355,18 @@ export class EmployeesService {
         tenantId,
       });
 
+    await this.ensureTurnstileCodeAvailable(
+      tenantId,
+      fields.turnstileCodeHash,
+      existingEmployee?.id,
+    );
+
     employee.attendancePolicyId = fields.attendancePolicyId;
     employee.departmentId = fields.departmentId;
     employee.displayName = fields.displayName;
     employee.roles = fields.roles;
     employee.status = fields.status;
+    employee.turnstileCodeHash = fields.turnstileCodeHash;
     employee.workplaceId = fields.workplaceId;
 
     return this.employeeRepository.save(employee);
@@ -383,6 +411,25 @@ export class EmployeesService {
 
     if (existingEmployee !== null) {
       throw new ConflictException('Employee email already exists.');
+    }
+  }
+
+  private async ensureTurnstileCodeAvailable(
+    tenantId: string,
+    turnstileCodeHash: string | null | undefined,
+    exceptEmployeeId?: string,
+  ): Promise<void> {
+    if (turnstileCodeHash === undefined || turnstileCodeHash === null) {
+      return;
+    }
+
+    const existingEmployee = await this.employeeRepository.findOneBy({
+      tenantId,
+      turnstileCodeHash,
+    });
+
+    if (existingEmployee !== null && existingEmployee.id !== exceptEmployeeId) {
+      throw new ConflictException('Turnstile code is already assigned to another employee.');
     }
   }
 
@@ -445,6 +492,24 @@ export class EmployeesService {
 
     return employee;
   }
+}
+
+function hashOptionalTurnstileCode(value: unknown): string | null {
+  const code = parseOptionalString(value, 'turnstileCode', 512);
+
+  return code === undefined ? null : hashTurnstileCode(code);
+}
+
+function hashOptionalNullableTurnstileCode(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  return hashOptionalTurnstileCode(value);
+}
+
+function hashTurnstileCode(code: string): string {
+  return createHash('sha256').update(code).digest('hex');
 }
 
 function getRecordValue(

@@ -42,6 +42,7 @@ export function toEmployeeDto(employee: EmployeeEntity): EmployeeDto {
     roles: employee.roles,
     status: employee.status,
     tenantId: employee.tenantId,
+    turnstileCodeConfigured: employee.turnstileCodeHash !== null,
     updatedAt: employee.updatedAt.toISOString(),
     userId: employee.userId,
     workplaceId: employee.workplaceId,

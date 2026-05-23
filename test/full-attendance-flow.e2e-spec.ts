@@ -42,11 +42,11 @@ import type {
   QrDeviceHeartbeatDto,
 } from '../src/qr-devices/dto/qr-device.dto';
 
-const runDatabaseE2e = process.env.SALIDIA_E2E_DATABASE === 'true';
+const runDatabaseE2e = process.env.REGIHORA_E2E_DATABASE === 'true';
 const describeDatabaseE2e = runDatabaseE2e ? describe : describe.skip;
-const tenantHeader = 'X-Salidia-Tenant-Id';
-const deviceTokenHeader = 'X-Salidia-Device-Token';
-const e2eDatabaseName = process.env.SALIDIA_E2E_DATABASE_NAME ?? 'salidia_e2e';
+const tenantHeader = 'X-Regihora-Tenant-Id';
+const deviceTokenHeader = 'X-Regihora-Device-Token';
+const e2eDatabaseName = process.env.REGIHORA_E2E_DATABASE_NAME ?? 'regihora_e2e';
 const ownerPassword = 'Owner-password-1';
 const employeePassword = 'Employee-password-1';
 const managerPassword = 'Manager-password-1';
@@ -106,7 +106,7 @@ describeDatabaseE2e('Full attendance flow e2e', () => {
     const flow = getContext(context);
     const ownerAuth = await login(
       flow.server,
-      'owner.flow@salidia.test',
+      'owner.flow@regihora.test',
       ownerPassword,
     );
 
@@ -124,7 +124,7 @@ describeDatabaseE2e('Full attendance flow e2e', () => {
       flow.tenant.id,
       {
         displayName: 'Empleado Flujo Completo',
-        email: 'employee.flow@salidia.test',
+        email: 'employee.flow@regihora.test',
         roles: [UserRole.EMPLOYEE],
         workplaceId: workplace.id,
       },
@@ -135,7 +135,7 @@ describeDatabaseE2e('Full attendance flow e2e', () => {
       flow.tenant.id,
       {
         displayName: 'Manager Flujo Completo',
-        email: 'manager.flow@salidia.test',
+        email: 'manager.flow@regihora.test',
         roles: [UserRole.MANAGER],
         workplaceId: workplace.id,
       },
@@ -248,9 +248,9 @@ describeDatabaseE2e('Full attendance flow e2e', () => {
 
     expect(report.headers['content-type']).toContain('text/csv');
     expect(report.headers['content-disposition']).toContain(
-      'salidia-registro-horario',
+      'regihora-registro-horario',
     );
-    expect(report.text).toContain('Salidia Full Flow SL');
+    expect(report.text).toContain('Regihora Full Flow SL');
     expect(report.text).toContain(activeEmployee.displayName);
     expect(report.text).toContain(AttendanceSource.REMOTE);
     expect(report.text).toContain(AttendanceSource.FIXED_DYNAMIC_QR);
@@ -267,15 +267,15 @@ function setDatabaseE2eEnvironment(): void {
   process.env.DATABASE_HOST ??= 'localhost';
   process.env.DATABASE_PORT ??= '5432';
   process.env.DATABASE_NAME = e2eDatabaseName;
-  process.env.DATABASE_USER ??= 'salidia';
+  process.env.DATABASE_USER ??= 'regihora';
   process.env.DATABASE_PASSWORD ??= 'change-me-local-only';
   process.env.DATABASE_SSL ??= 'false';
   process.env.DATABASE_LOGGING ??= 'false';
   process.env.JWT_ACCESS_TOKEN_SECRET = 'test-access-token-secret-for-e2e';
   process.env.JWT_ACCESS_TOKEN_TTL_SECONDS ??= '900';
   process.env.JWT_REFRESH_TOKEN_TTL_SECONDS ??= '2592000';
-  process.env.JWT_ISSUER ??= 'salidia-api';
-  process.env.JWT_AUDIENCE ??= 'salidia';
+  process.env.JWT_ISSUER ??= 'regihora-api';
+  process.env.JWT_AUDIENCE ??= 'regihora';
 }
 
 async function recreateE2eDatabase(): Promise<void> {
@@ -327,7 +327,7 @@ async function bootstrapInitialOwnerTenant(
   const employeeRepository = dataSource.getRepository(EmployeeEntity);
   const tenant = await tenantRepository.save(
     tenantRepository.create({
-      legalName: 'Salidia Full Flow SL',
+      legalName: 'Regihora Full Flow SL',
       locale: 'es-ES',
       plan: TenantPlan.BUSINESS,
       taxId: 'B00000000',
@@ -337,7 +337,7 @@ async function bootstrapInitialOwnerTenant(
   const ownerUser = await userRepository.save(
     userRepository.create({
       displayName: 'Owner Flujo Completo',
-      email: 'owner.flow@salidia.test',
+      email: 'owner.flow@regihora.test',
       isActive: true,
       passwordHash: await passwordHasher.hash(ownerPassword),
     }),
@@ -569,7 +569,7 @@ async function punch(
       deviceContext: {
         locale: 'es-ES',
         timezone: 'Europe/Madrid',
-        userAgent: 'salidia-e2e',
+        userAgent: 'regihora-e2e',
       },
     })
     .expect(201);
@@ -705,12 +705,12 @@ function formatMadridDate(date: Date): string {
 
 function ensureSafeE2eDatabaseName(databaseName: string): void {
   if (!/^[_a-zA-Z][_a-zA-Z0-9]*$/.test(databaseName)) {
-    throw new Error('SALIDIA_E2E_DATABASE_NAME must be a PostgreSQL identifier.');
+    throw new Error('REGIHORA_E2E_DATABASE_NAME must be a PostgreSQL identifier.');
   }
 
   if (!/(^|_)e2e($|_)|(^|_)test($|_)/i.test(databaseName)) {
     throw new Error(
-      'SALIDIA_E2E_DATABASE_NAME must include "e2e" or "test" because the e2e suite recreates it.',
+      'REGIHORA_E2E_DATABASE_NAME must include "e2e" or "test" because the e2e suite recreates it.',
     );
   }
 }

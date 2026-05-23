@@ -38,7 +38,7 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
   const serviceName = parseNonEmptyString(
     config.SERVICE_NAME,
     'SERVICE_NAME',
-    'salidia-api',
+    'regihora-api',
   );
   const logLevel = parseEnumValue(config.LOG_LEVEL, logLevels, 'LOG_LEVEL', 'log');
   const databaseEnabled = parseBoolean(
@@ -70,7 +70,7 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
     DATABASE_NAME: parseNonEmptyString(
       config.DATABASE_NAME,
       'DATABASE_NAME',
-      'salidia',
+      'regihora',
     ),
     DATABASE_PASSWORD: parseNonEmptyString(
       config.DATABASE_PASSWORD,
@@ -82,7 +82,7 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
     DATABASE_USER: parseNonEmptyString(
       config.DATABASE_USER,
       'DATABASE_USER',
-      'salidia',
+      'regihora',
     ),
     JWT_ACCESS_TOKEN_SECRET: parseSecret(
       config.JWT_ACCESS_TOKEN_SECRET,
@@ -97,12 +97,12 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
     JWT_AUDIENCE: parseNonEmptyString(
       config.JWT_AUDIENCE,
       'JWT_AUDIENCE',
-      'salidia',
+      'regihora',
     ),
     JWT_ISSUER: parseNonEmptyString(
       config.JWT_ISSUER,
       'JWT_ISSUER',
-      'salidia-api',
+      'regihora-api',
     ),
     JWT_REFRESH_TOKEN_TTL_SECONDS: parsePositiveInteger(
       config.JWT_REFRESH_TOKEN_TTL_SECONDS,

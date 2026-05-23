@@ -429,7 +429,7 @@ export class ReportsService {
     report: LegalAttendanceReport,
     format: ReportFormat,
   ): Promise<LegalAttendanceReportFileDto> {
-    const baseFilename = `salidia-registro-horario-${report.periodFrom}_${report.periodTo}`;
+    const baseFilename = `regihora-registro-horario-${report.periodFrom}_${report.periodTo}`;
 
     if (format === ReportFormat.CSV) {
       return {
@@ -705,7 +705,7 @@ function renderCsv(rows: LegalAttendanceReportRow[]): Buffer {
 async function renderXlsx(report: LegalAttendanceReport): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
 
-  workbook.creator = 'Salidia';
+  workbook.creator = 'Regihora';
   workbook.created = report.generatedAt;
   workbook.modified = report.generatedAt;
 

@@ -15,6 +15,12 @@ export type AttendancePunchCreateRequestDto = {
   deviceContext?: unknown;
 };
 
+export type TurnstilePunchCreateRequestDto = {
+  scannedCode?: unknown;
+  scanId?: unknown;
+  deviceContext?: unknown;
+};
+
 export type LocationEvidenceDto = {
   latitude: number;
   longitude: number;

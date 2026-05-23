@@ -50,6 +50,30 @@ describe(QrDevicesService.name, () => {
     expect(savedDevices[0]?.publicId).toMatch(/^qrd_/);
   });
 
+  it('creates an inactive turnstile device for an active workplace', async () => {
+    const service = makeService({
+      deviceRepository: {
+        create: (device: Partial<DeviceEntity>) =>
+          Object.assign(makeDevice(), device),
+        findOneBy: jest.fn().mockResolvedValue(null),
+      },
+    });
+
+    const response = await service.create('tenant-a', {
+      name: 'Torno entrada',
+      type: DeviceType.TURNSTILE,
+      workplaceId: 'workplace-a',
+    });
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        name: 'Torno entrada',
+        status: DeviceStatus.INACTIVE,
+        type: DeviceType.TURNSTILE,
+      }),
+    );
+  });
+
   it('creates a one-time enrollment token and stores only its hash', async () => {
     const device = makeDevice({ status: DeviceStatus.INACTIVE });
     const service = makeService({
@@ -170,6 +194,25 @@ describe(QrDevicesService.name, () => {
     );
     expect(new Date(challenge.expiresAt).getTime()).toBeGreaterThan(
       new Date(challenge.issuedAt).getTime(),
+    );
+  });
+
+  it('does not create QR challenges for turnstile devices', async () => {
+    const deviceToken = 'device-token-123456789012345678901234';
+    const service = makeService({
+      deviceRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makeDevice({
+            deviceTokenHash: hashSecret(deviceToken),
+            status: DeviceStatus.ACTIVE,
+            type: DeviceType.TURNSTILE,
+          }),
+        ),
+      },
+    });
+
+    await expect(service.createChallenge('device-a', deviceToken)).rejects.toThrow(
+      ConflictException,
     );
   });
 

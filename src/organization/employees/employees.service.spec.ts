@@ -1,4 +1,6 @@
-import { NotFoundException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 
 import { AttendancePolicyEntity } from '../../database/entities/attendance-policy.entity';
@@ -77,6 +79,59 @@ describe(EmployeesService.name, () => {
     expect(response.errors[0]?.message).toBe('Department not found.');
     expect(save).not.toHaveBeenCalled();
   });
+
+  it('stores only a hash for employee turnstile codes and rejects duplicates', async () => {
+    const savedEmployees: EmployeeEntity[] = [];
+    const service = makeService({
+      employeeRepository: {
+        create: (employee: Partial<EmployeeEntity>) =>
+          Object.assign(makeEmployee({}), employee),
+        findOneBy: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(null),
+        save: jest.fn().mockImplementation((employee: EmployeeEntity) => {
+          savedEmployees.push(employee);
+          return Promise.resolve(employee);
+        }),
+      },
+    });
+
+    const response = await service.create('tenant-a', {
+      displayName: 'Ana',
+      email: 'ana@example.com',
+      roles: [UserRole.EMPLOYEE],
+      turnstileCode: 'EMPLOYEE-QR-001',
+    });
+
+    expect(response.turnstileCodeConfigured).toBe(true);
+    expect(savedEmployees[0]?.turnstileCodeHash).toBe(hashSecret('EMPLOYEE-QR-001'));
+  });
+
+  it('rejects a turnstile code already assigned to another employee', async () => {
+    const service = makeService({
+      employeeRepository: {
+        findOneBy: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(
+            makeEmployee({
+              id: 'employee-b',
+              turnstileCodeHash: hashSecret('EMPLOYEE-QR-001'),
+            }),
+          ),
+      },
+    });
+
+    await expect(
+      service.create('tenant-a', {
+        displayName: 'Ana',
+        email: 'ana@example.com',
+        roles: [UserRole.EMPLOYEE],
+        turnstileCode: 'EMPLOYEE-QR-001',
+      }),
+    ).rejects.toThrow(ConflictException);
+  });
 });
 
 function makeService(overrides: {
@@ -118,9 +173,14 @@ function makeEmployee(overrides: Partial<EmployeeEntity>): EmployeeEntity {
     roles: [UserRole.EMPLOYEE],
     status: EmployeeStatus.INVITED,
     tenantId: 'tenant-a',
+    turnstileCodeHash: null,
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     userId: null,
     workplaceId: null,
     ...overrides,
   });
+}
+
+function hashSecret(secret: string): string {
+  return createHash('sha256').update(secret).digest('hex');
 }

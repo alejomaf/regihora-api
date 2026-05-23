@@ -49,11 +49,11 @@ import type {
   QrDeviceHeartbeatDto,
 } from '../src/qr-devices/dto/qr-device.dto';
 
-const runDatabaseE2e = process.env.SALIDIA_E2E_DATABASE === 'true';
+const runDatabaseE2e = process.env.REGIHORA_E2E_DATABASE === 'true';
 const describeDatabaseE2e = runDatabaseE2e ? describe : describe.skip;
-const tenantHeader = 'X-Salidia-Tenant-Id';
-const deviceTokenHeader = 'X-Salidia-Device-Token';
-const qaDatabaseName = process.env.SALIDIA_E2E_DATABASE_NAME ?? 'salidia_qa_e2e';
+const tenantHeader = 'X-Regihora-Tenant-Id';
+const deviceTokenHeader = 'X-Regihora-Device-Token';
+const qaDatabaseName = process.env.REGIHORA_E2E_DATABASE_NAME ?? 'regihora_qa_e2e';
 const qaPassword = 'Qa-password-1';
 
 type TestServer = Parameters<typeof request>[0];
@@ -131,21 +131,21 @@ describeDatabaseE2e('QA OpenAPI matrix e2e', () => {
 
     expect(responseBody(health)).toEqual(
       expect.objectContaining({
-        service: 'salidia-api',
+        service: 'regihora-api',
         status: 'ok',
       }),
     );
 
     await request(qa.server)
       .post('/v1/auth/login')
-      .send({ email: 'owner.qa@salidia.test', password: 'wrong-password' })
+      .send({ email: 'owner.qa@regihora.test', password: 'wrong-password' })
       .expect(401);
 
-    const ownerAuth = await login(qa.server, 'login', 'owner.qa@salidia.test');
-    const ownerBAuth = await login(qa.server, 'login', 'owner-b.qa@salidia.test');
-    const managerAuth = await login(qa.server, 'login', 'manager.qa@salidia.test');
-    const auditorAuth = await login(qa.server, 'login', 'auditor.qa@salidia.test');
-    let employeeAuth = await login(qa.server, 'login', 'employee.qa@salidia.test');
+    const ownerAuth = await login(qa.server, 'login', 'owner.qa@regihora.test');
+    const ownerBAuth = await login(qa.server, 'login', 'owner-b.qa@regihora.test');
+    const managerAuth = await login(qa.server, 'login', 'manager.qa@regihora.test');
+    const auditorAuth = await login(qa.server, 'login', 'auditor.qa@regihora.test');
+    let employeeAuth = await login(qa.server, 'login', 'employee.qa@regihora.test');
 
     const refreshedOwnerAuth = await refreshSession(
       qa.server,
@@ -158,7 +158,7 @@ describeDatabaseE2e('QA OpenAPI matrix e2e', () => {
     const actingOwnerAuth = await login(
       qa.server,
       'login',
-      'owner.qa@salidia.test',
+      'owner.qa@regihora.test',
     );
 
     await authorize(
@@ -174,7 +174,7 @@ describeDatabaseE2e('QA OpenAPI matrix e2e', () => {
     )
       .send({
         displayName: 'No permitido',
-        email: 'forbidden.qa@salidia.test',
+        email: 'forbidden.qa@regihora.test',
         roles: [UserRole.EMPLOYEE],
       })
       .expect(403);
@@ -269,7 +269,7 @@ describeDatabaseE2e('QA OpenAPI matrix e2e', () => {
         attendancePolicyId: hybridPolicy.id,
         departmentId: department.id,
         displayName: 'Empleado CRUD QA',
-        email: 'employee-crud.qa@salidia.test',
+        email: 'employee-crud.qa@regihora.test',
         roles: [UserRole.EMPLOYEE],
         workplaceId: workplace.id,
       },
@@ -297,7 +297,7 @@ describeDatabaseE2e('QA OpenAPI matrix e2e', () => {
       workplace.id,
       hybridPolicy.id,
     );
-    employeeAuth = await login(qa.server, 'login', 'employee.qa@salidia.test');
+    employeeAuth = await login(qa.server, 'login', 'employee.qa@regihora.test');
 
     const remoteClockIn = await punch(qa.server, employeeAuth, tenantId, {
       action: PunchAction.CLOCK_IN,
@@ -383,13 +383,60 @@ describeDatabaseE2e('QA OpenAPI matrix e2e', () => {
 
     expect(qrClockOut.validation.qrChallengeValidated).toBe(true);
 
+    const turnstileCode = `turnstile-${randomUUID()}`;
+    await updateEmployee(
+      qa.server,
+      actingOwnerAuth,
+      tenantId,
+      qa.seed.employees.employee.id,
+      {
+        status: EmployeeStatus.ACTIVE,
+        turnstileCode,
+      },
+    );
+    const turnstileDevice = await createQrDevice(
+      qa.server,
+      actingOwnerAuth,
+      tenantId,
+      workplace.id,
+      DeviceType.TURNSTILE,
+      'Torno QA',
+    );
+    const turnstileEnrollmentToken = await createQrDeviceEnrollmentToken(
+      qa.server,
+      actingOwnerAuth,
+      tenantId,
+      turnstileDevice.id,
+    );
+    const turnstileEnrollment = await enrollQrDevice(
+      qa.server,
+      turnstileEnrollmentToken.enrollmentToken,
+    );
+    const turnstileClockIn = await createTurnstileAttendancePunch(
+      qa.server,
+      turnstileDevice.id,
+      turnstileEnrollment.deviceToken,
+      turnstileCode,
+      `qa-turnstile-in-${randomUUID()}`,
+    );
+    const turnstileClockOut = await createTurnstileAttendancePunch(
+      qa.server,
+      turnstileDevice.id,
+      turnstileEnrollment.deviceToken,
+      turnstileCode,
+      `qa-turnstile-out-${randomUUID()}`,
+    );
+
+    expect(turnstileClockIn.action).toBe(PunchAction.CLOCK_IN);
+    expect(turnstileClockOut.action).toBe(PunchAction.CLOCK_OUT);
+
     await revokeQrDevice(qa.server, actingOwnerAuth, tenantId, qrDevice.id);
 
     const gpsEmployee = await createLinkedEmployeeUser(
       qa,
       tenantId,
       'Empleado GPS QA',
-      'employee-gps.qa@salidia.test',
+      'employee-gps.qa@regihora.test',
       [UserRole.EMPLOYEE],
       {
         attendancePolicyId: gpsPolicy.id,
@@ -401,7 +448,7 @@ describeDatabaseE2e('QA OpenAPI matrix e2e', () => {
     const gpsEmployeeAuth = await login(
       qa.server,
       'login',
-      'employee-gps.qa@salidia.test',
+      'employee-gps.qa@regihora.test',
     );
 
     await authorize(
@@ -527,15 +574,15 @@ function setDatabaseE2eEnvironment(): void {
   process.env.DATABASE_HOST ??= 'localhost';
   process.env.DATABASE_PORT ??= '5432';
   process.env.DATABASE_NAME = qaDatabaseName;
-  process.env.DATABASE_USER ??= 'salidia';
+  process.env.DATABASE_USER ??= 'regihora';
   process.env.DATABASE_PASSWORD ??= 'change-me-local-only';
   process.env.DATABASE_SSL ??= 'false';
   process.env.DATABASE_LOGGING ??= 'false';
   process.env.JWT_ACCESS_TOKEN_SECRET = 'test-access-token-secret-for-qa-e2e';
   process.env.JWT_ACCESS_TOKEN_TTL_SECONDS ??= '900';
   process.env.JWT_REFRESH_TOKEN_TTL_SECONDS ??= '2592000';
-  process.env.JWT_ISSUER ??= 'salidia-api';
-  process.env.JWT_AUDIENCE ??= 'salidia';
+  process.env.JWT_ISSUER ??= 'regihora-api';
+  process.env.JWT_AUDIENCE ??= 'regihora';
 }
 
 async function recreateE2eDatabase(): Promise<void> {
@@ -585,7 +632,7 @@ async function createQaSeed(
   const tenantRepository = dataSource.getRepository(TenantEntity);
   const tenantA = await tenantRepository.save(
     tenantRepository.create({
-      legalName: 'Salidia QA Tenant A SL',
+      legalName: 'Regihora QA Tenant A SL',
       locale: 'es-ES',
       plan: TenantPlan.BUSINESS,
       taxId: 'BQA000001',
@@ -594,7 +641,7 @@ async function createQaSeed(
   );
   const tenantB = await tenantRepository.save(
     tenantRepository.create({
-      legalName: 'Salidia QA Tenant B SL',
+      legalName: 'Regihora QA Tenant B SL',
       locale: 'es-ES',
       plan: TenantPlan.ESSENTIAL,
       taxId: 'BQA000002',
@@ -611,35 +658,35 @@ async function createQaSeed(
     qaContext,
     tenantA.id,
     'Owner QA',
-    'owner.qa@salidia.test',
+    'owner.qa@regihora.test',
     [UserRole.OWNER],
   );
   const manager = await createLinkedEmployeeUser(
     qaContext,
     tenantA.id,
     'Manager QA',
-    'manager.qa@salidia.test',
+    'manager.qa@regihora.test',
     [UserRole.MANAGER],
   );
   const auditor = await createLinkedEmployeeUser(
     qaContext,
     tenantA.id,
     'Auditor QA',
-    'auditor.qa@salidia.test',
+    'auditor.qa@regihora.test',
     [UserRole.AUDITOR],
   );
   const employee = await createLinkedEmployeeUser(
     qaContext,
     tenantA.id,
     'Empleado QA',
-    'employee.qa@salidia.test',
+    'employee.qa@regihora.test',
     [UserRole.EMPLOYEE],
   );
   const ownerB = await createLinkedEmployeeUser(
     qaContext,
     tenantB.id,
     'Owner QA Tenant B',
-    'owner-b.qa@salidia.test',
+    'owner-b.qa@regihora.test',
     [UserRole.OWNER],
   );
 
@@ -1077,6 +1124,7 @@ async function updateEmployee(
   body: Partial<{
     displayName: string;
     status: EmployeeStatus;
+    turnstileCode: string;
   }>,
 ): Promise<EmployeeDto> {
   const response = await authorize(
@@ -1133,7 +1181,7 @@ async function importEmployeesCsv(
 ): Promise<EmployeeCsvImportResponseDto> {
   const csv = [
     'displayName,email,roles,status,workplaceId,departmentId,attendancePolicyId',
-    `Empleado Import QA,employee-import.qa@salidia.test,EMPLOYEE,ACTIVE,${workplaceId},${departmentId},${attendancePolicyId}`,
+    `Empleado Import QA,employee-import.qa@regihora.test,EMPLOYEE,ACTIVE,${workplaceId},${departmentId},${attendancePolicyId}`,
   ].join('\n');
   const response = await authorize(
     request(server).post('/v1/employees/imports'),
@@ -1178,7 +1226,7 @@ async function punch(
       deviceContext: {
         locale: 'es-ES',
         timezone: 'Europe/Madrid',
-        userAgent: 'salidia-qa-e2e',
+        userAgent: 'regihora-qa-e2e',
       },
       employeeId: body.employeeId,
       locationEvidence: body.locationEvidence,
@@ -1198,12 +1246,14 @@ async function createQrDevice(
   auth: AuthResponseDto,
   tenantId: string,
   workplaceId: string,
+  type = DeviceType.FIXED_DYNAMIC_QR,
+  name = 'Kiosco QA',
 ): Promise<QrDeviceDto> {
   const response = await authorize(request(server).post('/v1/devices/qr'), auth, tenantId)
     .send({
-      name: 'Kiosco QA',
+      name,
       rotationSeconds: 60,
-      type: DeviceType.FIXED_DYNAMIC_QR,
+      type,
       workplaceId,
     })
     .expect(201);
@@ -1211,6 +1261,32 @@ async function createQrDevice(
   cover('createQrDevice');
 
   return responseBody(response) as QrDeviceDto;
+}
+
+async function createTurnstileAttendancePunch(
+  server: TestServer,
+  qrDeviceId: string,
+  deviceToken: string,
+  scannedCode: string,
+  scanId: string,
+): Promise<AttendancePunchDto> {
+  const response = await request(server)
+    .post(`/v1/devices/qr/${qrDeviceId}/turnstile-punch`)
+    .set(deviceTokenHeader, deviceToken)
+    .send({
+      deviceContext: {
+        locale: 'es-ES',
+        timezone: 'Europe/Madrid',
+        userAgent: 'regihora-turnstile-qa-e2e',
+      },
+      scanId,
+      scannedCode,
+    })
+    .expect(201);
+
+  cover('createTurnstileAttendancePunch');
+
+  return responseBody(response) as AttendancePunchDto;
 }
 
 async function listQrDevices(
@@ -1472,7 +1548,7 @@ async function exportLegalAttendanceReport(
 
   expect(response.headers['content-type']).toContain(expectedContentType);
   expect(response.headers['content-disposition']).toContain(
-    'salidia-registro-horario',
+    'regihora-registro-horario',
   );
   cover('exportLegalAttendanceReport');
 
@@ -1500,7 +1576,7 @@ function responseBody(response: Response): unknown {
 function readMatrixOperationIds(): string[] {
   const matrixPath = resolve(
     __dirname,
-    '../../salidia-contracts/qa/endpoint-surface-matrix.json',
+    '../../regihora-contracts/qa/endpoint-surface-matrix.json',
   );
   const matrix = JSON.parse(readFileSync(matrixPath, 'utf8')) as QaCoverageEntry[];
 
@@ -1522,12 +1598,12 @@ function formatMadridDate(date: Date): string {
 
 function ensureSafeE2eDatabaseName(databaseName: string): void {
   if (!/^[_a-zA-Z][_a-zA-Z0-9]*$/.test(databaseName)) {
-    throw new Error('SALIDIA_E2E_DATABASE_NAME must be a PostgreSQL identifier.');
+    throw new Error('REGIHORA_E2E_DATABASE_NAME must be a PostgreSQL identifier.');
   }
 
   if (!/(^|_)e2e($|_)|(^|_)test($|_)/i.test(databaseName)) {
     throw new Error(
-      'SALIDIA_E2E_DATABASE_NAME must include "e2e" or "test" because the e2e suite recreates it.',
+      'REGIHORA_E2E_DATABASE_NAME must include "e2e" or "test" because the e2e suite recreates it.',
     );
   }
 }

@@ -51,7 +51,7 @@ export function resolveTenantId(request: Request): TenantIdResolution {
 
 function collectTenantIdSources(request: Request): TenantIdSource[] {
   return [
-    ...makeSources('header:X-Salidia-Tenant-Id', request.headers[TENANT_ID_HEADER]),
+    ...makeSources('header:X-Regihora-Tenant-Id', request.headers[TENANT_ID_HEADER]),
     ...makeSources('param:tenantId', request.params.tenantId),
     ...makeSources(`param:${TENANT_ID_FIELD}`, request.params[TENANT_ID_FIELD]),
     ...makeSources(`query:${TENANT_ID_FIELD}`, request.query[TENANT_ID_FIELD]),

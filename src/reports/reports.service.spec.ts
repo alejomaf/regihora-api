@@ -56,7 +56,7 @@ describe(ReportsService.name, () => {
     const csv = file.body.toString('utf8');
 
     expect(file.contentType).toContain('text/csv');
-    expect(file.filename).toBe('salidia-registro-horario-2026-01-01_2026-01-01.csv');
+    expect(file.filename).toBe('regihora-registro-horario-2026-01-01_2026-01-01.csv');
     expect(csv).toContain('"Ana Ruiz"');
     expect(csv).toContain('"510"');
     expect(csv).toContain('"30"');
@@ -170,7 +170,7 @@ function makeEmployeeContext(): CurrentTenantContext {
 function makeTenant(): TenantEntity {
   return Object.assign(new TenantEntity(), {
     id: 'tenant-a',
-    legalName: 'Salidia Demo SL',
+    legalName: 'Regihora Demo SL',
     locale: 'es-ES',
     plan: TenantPlan.PRO,
     taxId: 'B12345678',

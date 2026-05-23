@@ -39,6 +39,7 @@ export enum PunchAction {
 
 export enum DeviceType {
   FIXED_DYNAMIC_QR = 'FIXED_DYNAMIC_QR',
+  TURNSTILE = 'TURNSTILE',
 }
 
 export enum DeviceStatus {

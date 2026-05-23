@@ -59,10 +59,11 @@ export class QrDevicesService {
       DeviceStatus,
       'status',
     );
+    const type = parseOptionalEnumValue(query.type, DeviceType, 'type');
     const where: FindOptionsWhere<DeviceEntity> = {
       tenantId,
-      type: DeviceType.FIXED_DYNAMIC_QR,
       ...(status === undefined ? {} : { status }),
+      ...(type === undefined ? {} : { type }),
       ...(workplaceId === undefined ? {} : { workplaceId }),
     };
     const devices = await this.deviceRepository.find({
@@ -233,7 +234,7 @@ export class QrDevicesService {
     qrDeviceId: string,
     deviceToken: unknown,
   ): Promise<QrDeviceHeartbeatDto> {
-    const parsedDeviceToken = parseToken(deviceToken, 'X-Salidia-Device-Token');
+    const parsedDeviceToken = parseToken(deviceToken, 'X-Regihora-Device-Token');
     const device = await this.deviceRepository.findOneBy({ id: qrDeviceId });
 
     if (device === null) {
@@ -271,6 +272,11 @@ export class QrDevicesService {
     deviceToken: unknown,
   ): Promise<QrChallengeDto> {
     const device = await this.getActiveDeviceByToken(qrDeviceId, deviceToken);
+
+    if (device.type !== DeviceType.FIXED_DYNAMIC_QR) {
+      throw new ConflictException('Only fixed dynamic QR devices can create challenges.');
+    }
+
     const issuedAt = new Date();
     const expiresAt = new Date(
       issuedAt.getTime() + getHeartbeatIntervalSeconds(device) * 1_000,
@@ -295,7 +301,6 @@ export class QrDevicesService {
     const device = await this.deviceRepository.findOneBy({
       id: qrDeviceId,
       tenantId,
-      type: DeviceType.FIXED_DYNAMIC_QR,
     });
 
     if (device === null) {
@@ -309,7 +314,7 @@ export class QrDevicesService {
     qrDeviceId: string,
     deviceToken: unknown,
   ): Promise<DeviceEntity & { deviceTokenHash: string }> {
-    const parsedDeviceToken = parseToken(deviceToken, 'X-Salidia-Device-Token');
+    const parsedDeviceToken = parseToken(deviceToken, 'X-Regihora-Device-Token');
     const device = await this.deviceRepository.findOneBy({ id: qrDeviceId });
 
     if (device === null) {

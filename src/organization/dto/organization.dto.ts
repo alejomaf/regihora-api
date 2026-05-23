@@ -71,6 +71,7 @@ export type EmployeeDto = {
   workplaceId: string | null;
   departmentId: string | null;
   attendancePolicyId: string | null;
+  turnstileCodeConfigured: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -82,6 +83,7 @@ export type EmployeeCreateRequestDto = {
   workplaceId?: unknown;
   departmentId?: unknown;
   attendancePolicyId?: unknown;
+  turnstileCode?: unknown;
 };
 
 export type EmployeeUpdateRequestDto = {
@@ -91,6 +93,7 @@ export type EmployeeUpdateRequestDto = {
   workplaceId?: unknown;
   departmentId?: unknown;
   attendancePolicyId?: unknown;
+  turnstileCode?: unknown;
 };
 
 export type EmployeeInvitationDto = {

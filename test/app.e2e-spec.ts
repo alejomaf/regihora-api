@@ -33,7 +33,7 @@ describe('App health endpoint', () => {
         expect(body).toEqual(
           expect.objectContaining({
             environment: 'test',
-            service: 'salidia-api',
+            service: 'regihora-api',
             status: 'ok',
           }),
         );

@@ -13,7 +13,7 @@ describe(TenantGuard.name, () => {
   it('attaches the current tenant from the required tenant header', () => {
     const request = makeRequest({
       headers: {
-        'x-salidia-tenant-id': 'tenant-a',
+        'x-regihora-tenant-id': 'tenant-a',
       },
     });
     const guard = new TenantGuard();
@@ -50,7 +50,7 @@ describe(TenantGuard.name, () => {
     const request = makeRequest({
       auth: undefined,
       headers: {
-        'x-salidia-tenant-id': 'tenant-a',
+        'x-regihora-tenant-id': 'tenant-a',
       },
     });
     const guard = new TenantGuard();
@@ -63,7 +63,7 @@ describe(TenantGuard.name, () => {
   it('blocks cross-tenant access when the user is not a tenant member', () => {
     const request = makeRequest({
       headers: {
-        'x-salidia-tenant-id': 'tenant-b',
+        'x-regihora-tenant-id': 'tenant-b',
       },
     });
     const guard = new TenantGuard();
@@ -78,7 +78,7 @@ describe(TenantGuard.name, () => {
         tenant_id: 'tenant-b',
       },
       headers: {
-        'x-salidia-tenant-id': 'tenant-a',
+        'x-regihora-tenant-id': 'tenant-a',
       },
     });
     const guard = new TenantGuard();

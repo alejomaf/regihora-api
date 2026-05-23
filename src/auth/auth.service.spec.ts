@@ -59,8 +59,8 @@ describe(AuthService.name, () => {
         sub: 'user-1',
       }),
       expect.objectContaining({
-        audience: 'salidia',
-        issuer: 'salidia-api',
+        audience: 'regihora',
+        issuer: 'regihora-api',
         secret: 'test-access-secret',
       }),
     );
@@ -153,8 +153,8 @@ function makeConfigService(): ConfigService<EnvironmentVariables, true> {
   const values = {
     JWT_ACCESS_TOKEN_SECRET: 'test-access-secret',
     JWT_ACCESS_TOKEN_TTL_SECONDS: 900,
-    JWT_AUDIENCE: 'salidia',
-    JWT_ISSUER: 'salidia-api',
+    JWT_AUDIENCE: 'regihora',
+    JWT_ISSUER: 'regihora-api',
     JWT_REFRESH_TOKEN_TTL_SECONDS: 2_592_000,
   };
 

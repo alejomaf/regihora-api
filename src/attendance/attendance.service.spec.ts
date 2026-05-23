@@ -248,6 +248,140 @@ describe(AttendanceService.name, () => {
     );
   });
 
+  it('creates a turnstile CLOCK_IN punch using the employee code and device token', async () => {
+    const deviceToken = 'device-token-123456789012345678901234';
+    const savedEvents: AttendanceEventEntity[] = [];
+    const service = makeService({
+      attendanceEventRepository: {
+        create: (event: Partial<AttendanceEventEntity>) =>
+          Object.assign(makeEvent(), event),
+        findOne: jest.fn().mockResolvedValue(null),
+        findOneBy: jest.fn().mockResolvedValue(null),
+        save: jest.fn().mockImplementation((event: AttendanceEventEntity) => {
+          savedEvents.push(event);
+          return Promise.resolve(event);
+        }),
+      },
+      deviceRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makeDevice({
+            deviceTokenHash: hashSecret(deviceToken),
+            status: DeviceStatus.ACTIVE,
+            type: DeviceType.TURNSTILE,
+          }),
+        ),
+      },
+      employeeRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makeEmployee({
+            turnstileCodeHash: hashSecret('EMPLOYEE-QR-001'),
+          }),
+        ),
+      },
+      policyRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makePolicy({
+            allowedWorkplaceIds: ['workplace-a'],
+            geolocationRequired: true,
+            ipAllowlist: [],
+            mode: AttendancePolicyMode.ONSITE_QR,
+          }),
+        ),
+      },
+    });
+
+    const response = await service.turnstilePunch(
+      'device-a',
+      deviceToken,
+      {
+        deviceContext: {
+          timezone: 'Europe/Madrid',
+        },
+        scanId: 'scan-001',
+        scannedCode: 'EMPLOYEE-QR-001',
+      },
+      {
+        ipAddress: '203.0.113.10',
+        userAgent: 'turnstile-test',
+      },
+    );
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        action: PunchAction.CLOCK_IN,
+        qrDeviceId: 'device-a',
+        source: AttendanceSource.IN_PERSON,
+        workplaceId: 'workplace-a',
+      }),
+    );
+    expect(savedEvents[0]).toEqual(
+      expect.objectContaining({
+        createdByUserId: 'user-a',
+        gpsProvided: false,
+        gpsRequiredByPolicy: false,
+        idempotencyKey: 'turnstile:device-a:scan-001',
+        source: AttendanceSource.IN_PERSON,
+      }),
+    );
+  });
+
+  it('creates a turnstile CLOCK_OUT punch when the employee is already clocked in', async () => {
+    const deviceToken = 'device-token-123456789012345678901234';
+    const service = makeService({
+      attendanceEventRepository: {
+        create: (event: Partial<AttendanceEventEntity>) =>
+          Object.assign(makeEvent(), event),
+        findOne: jest.fn().mockResolvedValue(
+          makeEvent({
+            action: PunchAction.CLOCK_IN,
+          }),
+        ),
+        findOneBy: jest.fn().mockResolvedValue(null),
+      },
+      deviceRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makeDevice({
+            deviceTokenHash: hashSecret(deviceToken),
+            status: DeviceStatus.ACTIVE,
+            type: DeviceType.TURNSTILE,
+          }),
+        ),
+      },
+      employeeRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makeEmployee({
+            turnstileCodeHash: hashSecret('EMPLOYEE-QR-001'),
+          }),
+        ),
+      },
+      policyRepository: {
+        findOneBy: jest.fn().mockResolvedValue(
+          makePolicy({
+            allowedWorkplaceIds: ['workplace-a'],
+            geolocationRequired: false,
+            ipAllowlist: [],
+            mode: AttendancePolicyMode.ONSITE_QR,
+          }),
+        ),
+      },
+    });
+
+    await expect(
+      service.turnstilePunch(
+        'device-a',
+        deviceToken,
+        {
+          scanId: 'scan-002',
+          scannedCode: 'EMPLOYEE-QR-001',
+        },
+        {
+          ipAddress: '203.0.113.10',
+          userAgent: 'turnstile-test',
+        },
+      ),
+    ).resolves.toEqual(expect.objectContaining({ action: PunchAction.CLOCK_OUT }));
+  });
+
   it('rejects reused QR challenge nonces', async () => {
     const deviceTokenHash = hashSecret('device-token-123456789012345678901234');
     const qrChallenge = makeQrChallenge(deviceTokenHash);
@@ -534,6 +668,7 @@ function makeEmployee(overrides: Partial<EmployeeEntity> = {}): EmployeeEntity {
     roles: [UserRole.EMPLOYEE],
     status: EmployeeStatus.ACTIVE,
     tenantId: 'tenant-a',
+    turnstileCodeHash: null,
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     userId: 'user-a',
     workplaceId: null,

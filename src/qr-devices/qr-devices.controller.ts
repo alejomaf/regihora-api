@@ -115,7 +115,7 @@ export class QrDevicesController {
   @HttpCode(HttpStatus.OK)
   heartbeat(
     @Param('qrDeviceId') qrDeviceId: string,
-    @Headers('x-salidia-device-token') deviceToken: string | string[] | undefined,
+    @Headers('x-regihora-device-token') deviceToken: string | string[] | undefined,
   ): Promise<QrDeviceHeartbeatDto> {
     return this.qrDevicesService.heartbeat(
       qrDeviceId,
@@ -126,7 +126,7 @@ export class QrDevicesController {
   @Post(':qrDeviceId/challenge')
   createChallenge(
     @Param('qrDeviceId') qrDeviceId: string,
-    @Headers('x-salidia-device-token') deviceToken: string | string[] | undefined,
+    @Headers('x-regihora-device-token') deviceToken: string | string[] | undefined,
   ): Promise<QrChallengeDto> {
     return this.qrDevicesService.createChallenge(
       qrDeviceId,

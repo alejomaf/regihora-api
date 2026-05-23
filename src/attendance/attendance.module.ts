@@ -15,6 +15,7 @@ import { WorkplaceEntity } from '../database/entities/workplace.entity';
 import { TenancyModule } from '../tenancy/tenancy.module';
 import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
+import { TurnstileAttendanceController } from './turnstile-attendance.controller';
 
 @Module({})
 export class AttendanceModule {
@@ -32,7 +33,7 @@ export class AttendanceModule {
     }
 
     return {
-      controllers: [AttendanceController],
+      controllers: [AttendanceController, TurnstileAttendanceController],
       imports: [
         JwtModule.register({}),
         TenancyModule,
