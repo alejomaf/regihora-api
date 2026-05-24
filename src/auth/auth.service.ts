@@ -24,6 +24,7 @@ import {
   AuthSessionListResponseDto,
   AuthUserSessionDto,
 } from './dto/auth-response.dto';
+import { GoogleSsoLoginRequestDto } from './dto/google-sso-login-request.dto';
 import { LoginRequestDto } from './dto/login-request.dto';
 import { OwnerRegistrationRequestDto } from './dto/owner-registration-request.dto';
 import { RefreshTokenRequestDto } from './dto/refresh-token-request.dto';
@@ -38,6 +39,14 @@ type RefreshTokenParts = {
 type CreatedSession = {
   refreshToken: string;
   session: SessionEntity;
+};
+
+type GoogleTokenInfo = {
+  aud?: unknown;
+  email?: unknown;
+  email_verified?: unknown;
+  exp?: unknown;
+  iss?: unknown;
 };
 
 @Injectable()
@@ -76,6 +85,28 @@ export class AuthService {
 
     if (!validPassword) {
       throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    return this.createSessionResponse(user, context, true);
+  }
+
+  async loginWithGoogleSso(
+    request: GoogleSsoLoginRequestDto,
+    context: RequestAuthContext,
+  ): Promise<AuthResponseDto> {
+    const clientId = this.configService.get('GOOGLE_OAUTH_CLIENT_ID', { infer: true });
+
+    if (clientId === null) {
+      throw new UnauthorizedException('Google SSO is not configured.');
+    }
+
+    const credential = this.parseNonEmptyString(request.credential, 'credential');
+    const tokenInfo = await this.fetchGoogleTokenInfo(credential);
+    const email = this.parseVerifiedGoogleEmail(tokenInfo, clientId);
+    const user = await this.findActiveUserByEmail(email);
+
+    if (user === null) {
+      throw new UnauthorizedException('Google account is not linked to Regihora.');
     }
 
     return this.createSessionResponse(user, context, true);
@@ -324,6 +355,68 @@ export class AuthService {
       .where('LOWER(user.email) = :email', { email })
       .andWhere('user.is_active = true')
       .getOne();
+  }
+
+  private async fetchGoogleTokenInfo(credential: string): Promise<GoogleTokenInfo> {
+    const url = new URL('https://oauth2.googleapis.com/tokeninfo');
+
+    url.searchParams.set('id_token', credential);
+
+    let response: Response;
+
+    try {
+      response = await fetch(url);
+    } catch {
+      throw new UnauthorizedException('Google SSO verification failed.');
+    }
+
+    if (!response.ok) {
+      throw new UnauthorizedException('Google SSO verification failed.');
+    }
+
+    let body: unknown;
+
+    try {
+      body = await response.json();
+    } catch {
+      throw new UnauthorizedException('Google SSO verification failed.');
+    }
+
+    if (!isRecord(body)) {
+      throw new UnauthorizedException('Google SSO verification failed.');
+    }
+
+    return body;
+  }
+
+  private parseVerifiedGoogleEmail(
+    tokenInfo: GoogleTokenInfo,
+    clientId: string,
+  ): string {
+    if (tokenInfo.aud !== clientId) {
+      throw new UnauthorizedException('Google SSO verification failed.');
+    }
+
+    if (
+      tokenInfo.iss !== 'accounts.google.com' &&
+      tokenInfo.iss !== 'https://accounts.google.com'
+    ) {
+      throw new UnauthorizedException('Google SSO verification failed.');
+    }
+
+    if (!isTrueTokenClaim(tokenInfo.email_verified)) {
+      throw new UnauthorizedException('Google email is not verified.');
+    }
+
+    if (!isFutureUnixTimestamp(tokenInfo.exp)) {
+      throw new UnauthorizedException('Google SSO credential has expired.');
+    }
+
+    if (typeof tokenInfo.email !== 'string') {
+      throw new UnauthorizedException('Google SSO verification failed.');
+    }
+
+    return this.parseEmail(tokenInfo.email);
   }
 
   private async createSessionResponse(
@@ -649,6 +742,25 @@ function validateTimezone(timezone: string, name: string): void {
 
 function toIsoString(value: Date): string {
   return value.toISOString();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isTrueTokenClaim(value: unknown): boolean {
+  return value === true || value === 'true';
+}
+
+function isFutureUnixTimestamp(value: unknown): boolean {
+  const parsedValue =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number(value)
+        : Number.NaN;
+
+  return Number.isFinite(parsedValue) && parsedValue > Date.now() / 1_000;
 }
 
 function isSameKnownDevice(

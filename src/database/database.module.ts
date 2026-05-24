@@ -65,6 +65,9 @@ function getEnvironmentFromConfig(
       'JWT_REFRESH_TOKEN_TTL_SECONDS',
       { infer: true },
     ),
+    GOOGLE_OAUTH_CLIENT_ID: configService.get('GOOGLE_OAUTH_CLIENT_ID', {
+      infer: true,
+    }),
     LOG_LEVEL: configService.get('LOG_LEVEL', { infer: true }),
     NODE_ENV: configService.get('NODE_ENV', { infer: true }),
     PORT: configService.get('PORT', { infer: true }),

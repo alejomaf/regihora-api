@@ -219,6 +219,85 @@ describe(AuthService.name, () => {
     });
   });
 
+  it('logs in with Google SSO when Google verifies an active user email', async () => {
+    const user = makeUser([
+      makeEmployee('tenant-1', 'employee-1', EmployeeStatus.ACTIVE, [
+        UserRole.EMPLOYEE,
+      ]),
+    ]);
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeGoogleTokenInfoResponse({
+        aud: 'google-client-id.apps.googleusercontent.com',
+        email: 'OWNER@example.com',
+      }),
+    );
+    const service = makeService({
+      googleClientId: 'google-client-id.apps.googleusercontent.com',
+      savedSessions: [],
+      sessions: [],
+      user,
+    });
+
+    const response = await service.loginWithGoogleSso(
+      { credential: 'google-id-token' },
+      { ipAddress: '127.0.0.1', userAgent: chromeMacUserAgent },
+    );
+    const requestedUrl = fetchSpy.mock.calls[0]?.[0];
+
+    expect(response.user.email).toBe('owner@example.com');
+    expect(response.memberships).toEqual([
+      {
+        employeeId: 'employee-1',
+        roles: [UserRole.EMPLOYEE],
+        tenantId: 'tenant-1',
+        tenantName: 'Empresa actual',
+      },
+    ]);
+    expect(requestedUrl).toBeInstanceOf(URL);
+    expect((requestedUrl as URL).searchParams.get('id_token')).toBe('google-id-token');
+
+    fetchSpy.mockRestore();
+  });
+
+  it('rejects Google SSO when the token audience does not match the configured client', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeGoogleTokenInfoResponse({
+        aud: 'another-client-id.apps.googleusercontent.com',
+        email: 'owner@example.com',
+      }),
+    );
+    const service = makeService({
+      googleClientId: 'google-client-id.apps.googleusercontent.com',
+      savedSessions: [],
+      sessions: [],
+      user: makeUser([]),
+    });
+
+    await expect(
+      service.loginWithGoogleSso(
+        { credential: 'google-id-token' },
+        { ipAddress: '127.0.0.1', userAgent: chromeMacUserAgent },
+      ),
+    ).rejects.toThrow(UnauthorizedException);
+
+    fetchSpy.mockRestore();
+  });
+
+  it('rejects Google SSO when Google is not configured', async () => {
+    const service = makeService({
+      savedSessions: [],
+      sessions: [],
+      user: makeUser([]),
+    });
+
+    await expect(
+      service.loginWithGoogleSso(
+        { credential: 'google-id-token' },
+        { ipAddress: '127.0.0.1', userAgent: chromeMacUserAgent },
+      ),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
   it('enforces the strictest tenant device limit by revoking oldest sessions on login', async () => {
     const user = makeUser([
       makeEmployee('tenant-1', 'employee-1', EmployeeStatus.ACTIVE, [
@@ -461,6 +540,7 @@ function makeService(options: {
   user: UserEntity | null;
   savedSessions: SessionEntity[];
   sessions: SessionEntity[];
+  googleClientId?: string | null;
   tenants?: TenantEntity[];
   jwtService?: JwtService;
 }): AuthService {
@@ -509,7 +589,7 @@ function makeService(options: {
     userRepository,
     sessionRepository,
     tenantRepository,
-    makeConfigService(),
+    makeConfigService(options.googleClientId ?? null),
     options.jwtService ?? makeJwtService(),
     makePasswordHasher(),
   );
@@ -539,9 +619,8 @@ function makeRegistrationService(): {
             (where.taxId === undefined || tenant.taxId === where.taxId),
         ) ?? null,
       ),
-    save: (tenant: TenantEntity) => {
-      const savedTenant = Object.assign(new TenantEntity(), {
-        ...tenant,
+    save: (tenant: Partial<TenantEntity>) => {
+      const savedTenant = Object.assign(new TenantEntity(), tenant, {
         billingCurrentPeriodEnd: null,
         billingStatus: tenant.billingStatus ?? BillingStatus.FREE,
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -566,8 +645,7 @@ function makeRegistrationService(): {
     create: (employee: Partial<EmployeeEntity>) =>
       Object.assign(new EmployeeEntity(), employee),
     save: (employee: EmployeeEntity) => {
-      const savedEmployee = Object.assign(new EmployeeEntity(), {
-        ...employee,
+      const savedEmployee = Object.assign(new EmployeeEntity(), employee, {
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
         departmentId: null,
         id: `employee-${String(employees.length + 1)}`,
@@ -610,8 +688,7 @@ function makeRegistrationService(): {
         }),
     },
     save: (user: UserEntity) => {
-      const savedUser = Object.assign(new UserEntity(), {
-        ...user,
+      const savedUser = Object.assign(new UserEntity(), user, {
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
         employees: [],
         id: `user-${String(users.length + 1)}`,
@@ -644,7 +721,7 @@ function makeRegistrationService(): {
       userRepository,
       sessionRepository,
       tenantRepository,
-      makeConfigService(),
+      makeConfigService(null),
       makeJwtService(),
       makePasswordHasher(),
     ),
@@ -699,8 +776,11 @@ function saveSession(sessions: SessionEntity[], session: SessionEntity): Session
   return session;
 }
 
-function makeConfigService(): ConfigService<EnvironmentVariables, true> {
+function makeConfigService(
+  googleClientId: string | null,
+): ConfigService<EnvironmentVariables, true> {
   const values = {
+    GOOGLE_OAUTH_CLIENT_ID: googleClientId,
     JWT_ACCESS_TOKEN_SECRET: 'test-access-secret',
     JWT_ACCESS_TOKEN_TTL_SECONDS: 900,
     JWT_AUDIENCE: 'regihora',
@@ -711,6 +791,30 @@ function makeConfigService(): ConfigService<EnvironmentVariables, true> {
   return {
     get: (key: keyof typeof values) => values[key],
   } as ConfigService<EnvironmentVariables, true>;
+}
+
+function makeGoogleTokenInfoResponse(overrides: {
+  aud: string;
+  email: string;
+  emailVerified?: boolean | string;
+  exp?: number;
+  iss?: string;
+}): Response {
+  return new Response(
+    JSON.stringify({
+      aud: overrides.aud,
+      email: overrides.email,
+      email_verified: overrides.emailVerified ?? 'true',
+      exp: overrides.exp ?? Math.floor(Date.now() / 1_000) + 300,
+      iss: overrides.iss ?? 'https://accounts.google.com',
+    }),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      status: 200,
+    },
+  );
 }
 
 function makeJwtService(signAsync = jest.fn().mockResolvedValue('access-token')): JwtService {

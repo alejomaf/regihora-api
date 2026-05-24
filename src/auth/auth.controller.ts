@@ -16,6 +16,7 @@ import { CurrentAuth } from './decorators/current-auth.decorator';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthResponseDto, AuthSessionListResponseDto } from './dto/auth-response.dto';
+import { GoogleSsoLoginRequestDto } from './dto/google-sso-login-request.dto';
 import { LoginRequestDto } from './dto/login-request.dto';
 import { LogoutRequestDto } from './dto/logout-request.dto';
 import { OwnerRegistrationRequestDto } from './dto/owner-registration-request.dto';
@@ -36,6 +37,18 @@ export class AuthController {
     @Req() httpRequest: Request,
   ): Promise<AuthResponseDto> {
     return this.authService.login(request, getRequestAuthContext(httpRequest));
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  loginWithGoogleSso(
+    @Body() request: GoogleSsoLoginRequestDto,
+    @Req() httpRequest: Request,
+  ): Promise<AuthResponseDto> {
+    return this.authService.loginWithGoogleSso(
+      request,
+      getRequestAuthContext(httpRequest),
+    );
   }
 
   @Post('register-owner')

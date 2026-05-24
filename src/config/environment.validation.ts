@@ -22,6 +22,7 @@ export type EnvironmentVariables = {
   JWT_REFRESH_TOKEN_TTL_SECONDS: number;
   JWT_ISSUER: string;
   JWT_AUDIENCE: string;
+  GOOGLE_OAUTH_CLIENT_ID: string | null;
   CORS_ALLOWED_ORIGINS: string[];
   STRIPE_SECRET_KEY: string | null;
   STRIPE_WEBHOOK_SECRET: string | null;
@@ -118,6 +119,10 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
       config.JWT_REFRESH_TOKEN_TTL_SECONDS,
       'JWT_REFRESH_TOKEN_TTL_SECONDS',
       2_592_000,
+    ),
+    GOOGLE_OAUTH_CLIENT_ID: parseOptionalNonEmptyString(
+      config.GOOGLE_OAUTH_CLIENT_ID,
+      'GOOGLE_OAUTH_CLIENT_ID',
     ),
     LOG_LEVEL: logLevel,
     NODE_ENV: nodeEnvironment,
