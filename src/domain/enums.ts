@@ -75,6 +75,17 @@ export enum TenantPlan {
   ENTERPRISE = 'ENTERPRISE',
 }
 
+export enum BillingStatus {
+  FREE = 'FREE',
+  CHECKOUT_REQUIRED = 'CHECKOUT_REQUIRED',
+  TRIALING = 'TRIALING',
+  ACTIVE = 'ACTIVE',
+  PAST_DUE = 'PAST_DUE',
+  CANCELED = 'CANCELED',
+  INCOMPLETE = 'INCOMPLETE',
+  UNPAID = 'UNPAID',
+}
+
 export enum ResourceStatus {
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',

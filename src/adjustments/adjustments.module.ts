@@ -12,6 +12,7 @@ import { AttendanceDailySummaryEntity } from '../database/entities/attendance-da
 import { AttendanceEventEntity } from '../database/entities/attendance-event.entity';
 import { AuditLogEntity } from '../database/entities/audit-log.entity';
 import { EmployeeEntity } from '../database/entities/employee.entity';
+import { SessionEntity } from '../database/entities/session.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
 import { WorkplaceEntity } from '../database/entities/workplace.entity';
 import { TenancyModule } from '../tenancy/tenancy.module';
@@ -45,6 +46,7 @@ export class AdjustmentsModule {
           AttendanceEventEntity,
           AuditLogEntity,
           EmployeeEntity,
+          SessionEntity,
           TenantEntity,
           WorkplaceEntity,
         ]),

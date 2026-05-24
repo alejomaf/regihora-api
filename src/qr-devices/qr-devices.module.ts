@@ -8,6 +8,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { getEnvironmentFilePaths } from '../config/environment-file-paths';
 import { validateEnvironment } from '../config/environment.validation';
 import { DeviceEntity } from '../database/entities/device.entity';
+import { SessionEntity } from '../database/entities/session.entity';
 import { WorkplaceEntity } from '../database/entities/workplace.entity';
 import { TenancyModule } from '../tenancy/tenancy.module';
 import { QrDevicesController } from './qr-devices.controller';
@@ -33,7 +34,7 @@ export class QrDevicesModule {
       imports: [
         JwtModule.register({}),
         TenancyModule,
-        TypeOrmModule.forFeature([DeviceEntity, WorkplaceEntity]),
+        TypeOrmModule.forFeature([DeviceEntity, SessionEntity, WorkplaceEntity]),
       ],
       module: QrDevicesModule,
       providers: [QrDevicesService, JwtAuthGuard, RolesGuard],

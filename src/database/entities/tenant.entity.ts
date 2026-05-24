@@ -8,7 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { TenantPlan } from '../../domain/enums';
+import { BillingStatus, TenantPlan } from '../../domain/enums';
 import { AttendanceAdjustmentEntity } from './attendance-adjustment.entity';
 import { AttendanceEventEntity } from './attendance-event.entity';
 import { AttendancePolicyEntity } from './attendance-policy.entity';
@@ -38,11 +38,43 @@ export class TenantEntity {
   })
   plan!: TenantPlan;
 
+  @Column({
+    default: BillingStatus.FREE,
+    enum: BillingStatus,
+    enumName: 'billing_status',
+    name: 'billing_status',
+    type: 'enum',
+  })
+  billingStatus!: BillingStatus;
+
   @Column({ default: 'Europe/Madrid', type: 'varchar', length: 64 })
   timezone!: string;
 
   @Column({ default: 'es-ES', type: 'varchar', length: 16 })
   locale!: string;
+
+  @Column({ name: 'session_device_limit', type: 'integer', nullable: true })
+  sessionDeviceLimit!: number | null;
+
+  @Column({ name: 'stripe_customer_id', type: 'varchar', length: 255, nullable: true })
+  stripeCustomerId!: string | null;
+
+  @Column({
+    name: 'stripe_subscription_id',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  stripeSubscriptionId!: string | null;
+
+  @Column({ name: 'stripe_price_id', type: 'varchar', length: 255, nullable: true })
+  stripePriceId!: string | null;
+
+  @Column({ name: 'billing_current_period_end', type: 'timestamptz', nullable: true })
+  billingCurrentPeriodEnd!: Date | null;
+
+  @Column({ name: 'trial_ends_at', type: 'timestamptz', nullable: true })
+  trialEndsAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

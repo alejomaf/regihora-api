@@ -1,18 +1,31 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, MoreThan, Repository } from 'typeorm';
+import { In, IsNull, MoreThan, Repository } from 'typeorm';
 
 import { EnvironmentVariables } from '../config/environment.validation';
-import { EmployeeStatus, UserRole } from '../domain/enums';
+import { BillingStatus, EmployeeStatus, TenantPlan, UserRole } from '../domain/enums';
 import { EmployeeEntity } from '../database/entities/employee.entity';
 import { SessionEntity } from '../database/entities/session.entity';
+import { TenantEntity } from '../database/entities/tenant.entity';
 import { UserEntity } from '../database/entities/user.entity';
-import { AuthResponseDto, AuthMembershipDto } from './dto/auth-response.dto';
+import {
+  AuthMembershipDto,
+  AuthResponseDto,
+  AuthSessionListResponseDto,
+  AuthUserSessionDto,
+} from './dto/auth-response.dto';
 import { LoginRequestDto } from './dto/login-request.dto';
+import { OwnerRegistrationRequestDto } from './dto/owner-registration-request.dto';
 import { RefreshTokenRequestDto } from './dto/refresh-token-request.dto';
 import { PasswordHasher } from './password/password-hasher.service';
 import { RequestAuthContext } from './types/authenticated-principal';
@@ -22,6 +35,11 @@ type RefreshTokenParts = {
   secret: string;
 };
 
+type CreatedSession = {
+  refreshToken: string;
+  session: SessionEntity;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -29,6 +47,8 @@ export class AuthService {
     private readonly userRepository: Repository<UserEntity>,
     @InjectRepository(SessionEntity)
     private readonly sessionRepository: Repository<SessionEntity>,
+    @InjectRepository(TenantEntity)
+    private readonly tenantRepository: Repository<TenantEntity>,
     private readonly configService: ConfigService<EnvironmentVariables, true>,
     private readonly jwtService: JwtService,
     private readonly passwordHasher: PasswordHasher,
@@ -58,7 +78,106 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password.');
     }
 
-    return this.createSessionResponse(user, context);
+    return this.createSessionResponse(user, context, true);
+  }
+
+  async registerOwner(
+    request: OwnerRegistrationRequestDto,
+    context: RequestAuthContext,
+  ): Promise<AuthResponseDto> {
+    const companyLegalName = this.parsePublicString(
+      request.companyLegalName,
+      'companyLegalName',
+      2,
+      200,
+    );
+    const companyTaxId = this.parsePublicString(
+      request.companyTaxId,
+      'companyTaxId',
+      3,
+      32,
+    ).toUpperCase();
+    const ownerDisplayName = this.parsePublicString(
+      request.ownerDisplayName,
+      'ownerDisplayName',
+      2,
+      160,
+    );
+    const ownerEmail = this.parsePublicEmail(request.ownerEmail, 'ownerEmail');
+    const password = this.parsePassword(request.password);
+    const timezone = this.parseOptionalPublicString(
+      request.timezone,
+      'timezone',
+      1,
+      64,
+      'Europe/Madrid',
+    );
+    const locale = this.parseOptionalPublicString(
+      request.locale,
+      'locale',
+      2,
+      16,
+      'es-ES',
+    );
+
+    if (request.acceptTerms !== true) {
+      throw new BadRequestException('acceptTerms must be true.');
+    }
+
+    validateTimezone(timezone, 'timezone');
+
+    const created = await this.userRepository.manager.transaction(async (manager) => {
+      const userRepository = manager.getRepository(UserEntity);
+      const tenantRepository = manager.getRepository(TenantEntity);
+      const employeeRepository = manager.getRepository(EmployeeEntity);
+
+      const existingUser = await userRepository.findOneBy({ email: ownerEmail });
+
+      if (existingUser !== null) {
+        throw new ConflictException('A user with this email already exists.');
+      }
+
+      const existingTenant = await tenantRepository.findOneBy({ taxId: companyTaxId });
+
+      if (existingTenant !== null) {
+        throw new ConflictException('A company with this tax identifier already exists.');
+      }
+
+      const tenant = await tenantRepository.save(
+        tenantRepository.create({
+          billingStatus: BillingStatus.FREE,
+          legalName: companyLegalName,
+          locale,
+          plan: TenantPlan.FREE,
+          taxId: companyTaxId,
+          timezone,
+        }),
+      );
+      const user = await userRepository.save(
+        userRepository.create({
+          displayName: ownerDisplayName,
+          email: ownerEmail,
+          isActive: true,
+          passwordHash: await this.passwordHasher.hash(password),
+        }),
+      );
+      const employee = await employeeRepository.save(
+        employeeRepository.create({
+          displayName: ownerDisplayName,
+          email: ownerEmail,
+          roles: [UserRole.OWNER],
+          status: EmployeeStatus.ACTIVE,
+          tenantId: tenant.id,
+          userId: user.id,
+        }),
+      );
+
+      user.employees = [employee];
+
+      return user;
+    });
+
+    return this.createSessionResponse(created, context, false);
   }
 
   async refresh(
@@ -90,6 +209,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token.');
     }
 
+    if (!isSameKnownDevice(session.userAgent, context.userAgent)) {
+      session.revokedAt = new Date();
+      session.lastUsedAt = session.revokedAt;
+      await this.sessionRepository.save(session);
+
+      throw new UnauthorizedException('Refresh token was used from another device.');
+    }
+
     session.revokedAt = new Date();
     session.lastUsedAt = session.revokedAt;
     await this.sessionRepository.save(session);
@@ -98,7 +225,7 @@ export class AuthService {
       throw new UnauthorizedException('User is inactive.');
     }
 
-    return this.createSessionResponse(session.user, context);
+    return this.createSessionResponse(session.user, context, false);
   }
 
   async logout(request: RefreshTokenRequestDto): Promise<void> {
@@ -129,6 +256,67 @@ export class AuthService {
     await this.sessionRepository.save(session);
   }
 
+  async listSessions(auth: {
+    sub: string;
+    sessionId?: string;
+  }): Promise<AuthSessionListResponseDto> {
+    const sessions = await this.findActiveSessions(auth.sub);
+
+    return {
+      data: this.mapUserSessions(sessions, auth.sessionId ?? null),
+    };
+  }
+
+  async revokeOtherSessions(auth: {
+    sub: string;
+    sessionId?: string;
+  }): Promise<AuthSessionListResponseDto> {
+    const currentSessionId = this.getCurrentSessionId(auth);
+    const sessions = await this.findActiveSessions(auth.sub);
+    const now = new Date();
+    const sessionsToRevoke = sessions.filter((session) => session.id !== currentSessionId);
+
+    if (sessionsToRevoke.length > 0) {
+      sessionsToRevoke.forEach((session) => {
+        session.revokedAt = now;
+        session.lastUsedAt = now;
+      });
+      await this.sessionRepository.save(sessionsToRevoke);
+    }
+
+    return {
+      data: this.mapUserSessions(
+        sessions.filter((session) => session.id === currentSessionId),
+        currentSessionId,
+      ),
+    };
+  }
+
+  async revokeSession(auth: { sub: string; sessionId?: string }, sessionId: string): Promise<void> {
+    const currentSessionId = auth.sessionId ?? null;
+
+    if (sessionId === currentSessionId) {
+      throw new BadRequestException('Use logout to revoke the current session.');
+    }
+
+    const session = await this.sessionRepository.findOne({
+      where: {
+        expiresAt: MoreThan(new Date()),
+        id: sessionId,
+        revokedAt: IsNull(),
+        userId: auth.sub,
+      },
+    });
+
+    if (session === null) {
+      throw new NotFoundException('Session not found.');
+    }
+
+    session.revokedAt = new Date();
+    session.lastUsedAt = session.revokedAt;
+    await this.sessionRepository.save(session);
+  }
+
   private async findActiveUserByEmail(email: string): Promise<UserEntity | null> {
     return this.userRepository
       .createQueryBuilder('user')
@@ -141,8 +329,16 @@ export class AuthService {
   private async createSessionResponse(
     user: UserEntity,
     context: RequestAuthContext,
+    includeNewDeviceNotice: boolean,
   ): Promise<AuthResponseDto> {
-    const memberships = this.getActiveMemberships(user.employees);
+    const memberships = await this.getActiveMemberships(user.employees);
+    const createdSession = await this.createRefreshSession(user.id, context);
+    const sessionDeviceLimit = await this.getSessionDeviceLimit(user.employees);
+    const remainingSessions = await this.enforceSessionDeviceLimit(
+      user.id,
+      createdSession.session.id,
+      sessionDeviceLimit,
+    );
     const accessTokenTtlSeconds = this.configService.get(
       'JWT_ACCESS_TOKEN_TTL_SECONDS',
       { infer: true },
@@ -153,6 +349,7 @@ export class AuthService {
         email: user.email,
         memberships,
         roles: this.getFlattenedRoles(memberships),
+        sessionId: createdSession.session.id,
         sub: user.id,
       },
       {
@@ -162,13 +359,27 @@ export class AuthService {
         secret: this.configService.get('JWT_ACCESS_TOKEN_SECRET', { infer: true }),
       },
     );
-    const refreshToken = await this.createRefreshToken(user.id, context);
+    const newDeviceLogin =
+      includeNewDeviceNotice &&
+      remainingSessions.some(
+        (session) =>
+          session.id !== createdSession.session.id &&
+          hasDifferentKnownDevice(session.userAgent, context.userAgent),
+      );
 
     return {
       accessToken,
+      currentSession: this.mapUserSession(createdSession.session, createdSession.session.id),
       expiresAt: expiresAt.toISOString(),
       memberships,
-      refreshToken,
+      refreshToken: createdSession.refreshToken,
+      securityNotice: {
+        activeSessionCount: remainingSessions.length,
+        message: newDeviceLogin
+          ? 'A new login was detected from a different device.'
+          : null,
+        newDeviceLogin,
+      },
       tokenType: 'Bearer',
       user: {
         createdAt: user.createdAt.toISOString(),
@@ -179,10 +390,10 @@ export class AuthService {
     };
   }
 
-  private async createRefreshToken(
+  private async createRefreshSession(
     userId: string,
     context: RequestAuthContext,
-  ): Promise<string> {
+  ): Promise<CreatedSession> {
     const sessionId = randomUUID();
     const secret = randomBytes(48).toString('base64url');
     const expiresAt = new Date(
@@ -194,24 +405,147 @@ export class AuthService {
       expiresAt,
       id: sessionId,
       ipAddress: context.ipAddress,
+      lastUsedAt: new Date(),
       refreshTokenHash: await this.passwordHasher.hash(secret),
+      revokedAt: null,
       userAgent: context.userAgent,
       userId,
     });
 
-    await this.sessionRepository.save(session);
+    const savedSession = await this.sessionRepository.save(session);
 
-    return `${sessionId}.${secret}`;
+    return {
+      refreshToken: `${sessionId}.${secret}`,
+      session: savedSession,
+    };
   }
 
-  private getActiveMemberships(employees: EmployeeEntity[]): AuthMembershipDto[] {
-    return employees
-      .filter((employee) => employee.status !== EmployeeStatus.INACTIVE)
-      .map((employee) => ({
-        employeeId: employee.id,
-        roles: employee.roles,
-        tenantId: employee.tenantId,
-      }));
+  private async findActiveSessions(userId: string): Promise<SessionEntity[]> {
+    return this.sessionRepository.find({
+      order: {
+        createdAt: 'DESC',
+      },
+      where: {
+        expiresAt: MoreThan(new Date()),
+        revokedAt: IsNull(),
+        userId,
+      },
+    });
+  }
+
+  private async getSessionDeviceLimit(employees: EmployeeEntity[]): Promise<number | null> {
+    const tenantIds = [
+      ...new Set(
+        employees
+          .filter((employee) => employee.status !== EmployeeStatus.INACTIVE)
+          .map((employee) => employee.tenantId),
+      ),
+    ];
+
+    if (tenantIds.length === 0) {
+      return null;
+    }
+
+    const tenants = await this.tenantRepository.find({
+      where: {
+        id: In(tenantIds),
+      },
+    });
+    const configuredLimits = tenants
+      .map((tenant) => tenant.sessionDeviceLimit)
+      .filter((limit): limit is number => limit !== null);
+
+    if (configuredLimits.length === 0) {
+      return null;
+    }
+
+    return Math.min(...configuredLimits);
+  }
+
+  private async enforceSessionDeviceLimit(
+    userId: string,
+    currentSessionId: string,
+    sessionDeviceLimit: number | null,
+  ): Promise<SessionEntity[]> {
+    const sessions = await this.findActiveSessions(userId);
+
+    if (sessionDeviceLimit === null || sessions.length <= sessionDeviceLimit) {
+      return sessions;
+    }
+
+    const currentSession = sessions.find((session) => session.id === currentSessionId);
+    const otherSessions = sessions.filter((session) => session.id !== currentSessionId);
+    const sessionsToKeep = [
+      ...(currentSession === undefined ? [] : [currentSession]),
+      ...otherSessions.slice(0, Math.max(sessionDeviceLimit - 1, 0)),
+    ];
+    const sessionIdsToKeep = new Set(sessionsToKeep.map((session) => session.id));
+    const now = new Date();
+    const sessionsToRevoke = sessions.filter(
+      (session) => !sessionIdsToKeep.has(session.id),
+    );
+
+    sessionsToRevoke.forEach((session) => {
+      session.revokedAt = now;
+      session.lastUsedAt = now;
+    });
+    await this.sessionRepository.save(sessionsToRevoke);
+
+    return sessionsToKeep;
+  }
+
+  private getCurrentSessionId(auth: { sessionId?: string }): string {
+    if (auth.sessionId === undefined) {
+      throw new BadRequestException('Current session is not identifiable.');
+    }
+
+    return auth.sessionId;
+  }
+
+  private mapUserSessions(
+    sessions: SessionEntity[],
+    currentSessionId: string | null,
+  ): AuthUserSessionDto[] {
+    return sessions.map((session) => this.mapUserSession(session, currentSessionId));
+  }
+
+  private mapUserSession(
+    session: SessionEntity,
+    currentSessionId: string | null,
+  ): AuthUserSessionDto {
+    return {
+      createdAt: toIsoString(session.createdAt),
+      current: currentSessionId !== null && session.id === currentSessionId,
+      deviceLabel: getDeviceLabel(session.userAgent),
+      expiresAt: toIsoString(session.expiresAt),
+      id: session.id,
+      ipAddress: session.ipAddress,
+      lastUsedAt: session.lastUsedAt?.toISOString() ?? null,
+      userAgent: session.userAgent,
+    };
+  }
+
+  private async getActiveMemberships(employees: EmployeeEntity[]): Promise<AuthMembershipDto[]> {
+    const activeEmployees = employees.filter(
+      (employee) => employee.status !== EmployeeStatus.INACTIVE,
+    );
+    const tenantIds = [...new Set(activeEmployees.map((employee) => employee.tenantId))];
+    const tenants =
+      tenantIds.length === 0
+        ? []
+        : await this.tenantRepository.find({
+            where: {
+              id: In(tenantIds),
+            },
+          });
+    const tenantNames = new Map(tenants.map((tenant) => [tenant.id, tenant.legalName]));
+
+    return activeEmployees.map((employee) => ({
+      employeeId: employee.id,
+      roles: employee.roles,
+      tenantId: employee.tenantId,
+      tenantName: tenantNames.get(employee.tenantId) ?? 'Empresa actual',
+    }));
   }
 
   private getFlattenedRoles(memberships: AuthMembershipDto[]): UserRole[] {
@@ -241,11 +575,199 @@ export class AuthService {
     return email;
   }
 
+  private parsePublicEmail(value: unknown, name: string): string {
+    const email = this.parsePublicString(value, name, 3, 320).toLowerCase();
+
+    if (!email.includes('@')) {
+      throw new BadRequestException(`${name} must be a valid email.`);
+    }
+
+    return email;
+  }
+
+  private parsePassword(value: unknown): string {
+    const password = this.parsePublicString(value, 'password', 8, 256);
+
+    if (password.trim() !== password) {
+      throw new BadRequestException('password must not start or end with whitespace.');
+    }
+
+    return password;
+  }
+
+  private parsePublicString(
+    value: unknown,
+    name: string,
+    minLength: number,
+    maxLength: number,
+  ): string {
+    if (typeof value !== 'string') {
+      throw new BadRequestException(`${name} is required.`);
+    }
+
+    const trimmed = value.trim();
+
+    if (trimmed.length < minLength || trimmed.length > maxLength) {
+      throw new BadRequestException(
+        `${name} must be between ${String(minLength)} and ${String(maxLength)} characters.`,
+      );
+    }
+
+    return trimmed;
+  }
+
+  private parseOptionalPublicString(
+    value: unknown,
+    name: string,
+    minLength: number,
+    maxLength: number,
+    fallback: string,
+  ): string {
+    if (value === undefined || value === null || value === '') {
+      return fallback;
+    }
+
+    return this.parsePublicString(value, name, minLength, maxLength);
+  }
+
   private parseNonEmptyString(value: unknown, name: string): string {
     if (typeof value !== 'string' || value.trim().length === 0) {
       throw new UnauthorizedException(`${name} is required.`);
     }
 
     return value.trim();
+  }
+}
+
+function validateTimezone(timezone: string, name: string): void {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
+  } catch {
+    throw new BadRequestException(`${name} must be a valid IANA timezone.`);
+  }
+}
+
+function toIsoString(value: Date): string {
+  return value.toISOString();
+}
+
+function isSameKnownDevice(
+  previousUserAgent: string | null,
+  currentUserAgent: string | null,
+): boolean {
+  if (previousUserAgent === null || currentUserAgent === null) {
+    return true;
+  }
+
+  return getDeviceFingerprint(previousUserAgent) === getDeviceFingerprint(currentUserAgent);
+}
+
+function hasDifferentKnownDevice(
+  previousUserAgent: string | null,
+  currentUserAgent: string | null,
+): boolean {
+  if (previousUserAgent === null || currentUserAgent === null) {
+    return false;
+  }
+
+  return getDeviceFingerprint(previousUserAgent) !== getDeviceFingerprint(currentUserAgent);
+}
+
+function getDeviceFingerprint(userAgent: string): string {
+  return `${getBrowserFamily(userAgent)}:${getPlatformFamily(userAgent)}`;
+}
+
+function getDeviceLabel(userAgent: string | null): string {
+  if (userAgent === null) {
+    return 'Dispositivo desconocido';
+  }
+
+  const browser = getBrowserLabel(userAgent);
+  const platform = getPlatformLabel(userAgent);
+
+  if (browser === 'Navegador desconocido' && platform === 'sistema desconocido') {
+    return 'Dispositivo desconocido';
+  }
+
+  return `${browser} en ${platform}`;
+}
+
+function getBrowserFamily(userAgent: string): string {
+  const normalized = userAgent.toLowerCase();
+
+  if (normalized.includes('edg/')) {
+    return 'edge';
+  }
+
+  if (normalized.includes('firefox/')) {
+    return 'firefox';
+  }
+
+  if (normalized.includes('chrome/') || normalized.includes('crios/')) {
+    return 'chrome';
+  }
+
+  if (normalized.includes('safari/')) {
+    return 'safari';
+  }
+
+  return 'unknown-browser';
+}
+
+function getBrowserLabel(userAgent: string): string {
+  switch (getBrowserFamily(userAgent)) {
+    case 'edge':
+      return 'Microsoft Edge';
+    case 'firefox':
+      return 'Firefox';
+    case 'chrome':
+      return 'Chrome';
+    case 'safari':
+      return 'Safari';
+    default:
+      return 'Navegador desconocido';
+  }
+}
+
+function getPlatformFamily(userAgent: string): string {
+  const normalized = userAgent.toLowerCase();
+
+  if (normalized.includes('iphone') || normalized.includes('ipad')) {
+    return 'ios';
+  }
+
+  if (normalized.includes('android')) {
+    return 'android';
+  }
+
+  if (normalized.includes('mac os x') || normalized.includes('macintosh')) {
+    return 'macos';
+  }
+
+  if (normalized.includes('windows')) {
+    return 'windows';
+  }
+
+  if (normalized.includes('linux')) {
+    return 'linux';
+  }
+
+  return 'unknown-platform';
+}
+
+function getPlatformLabel(userAgent: string): string {
+  switch (getPlatformFamily(userAgent)) {
+    case 'ios':
+      return 'iOS';
+    case 'android':
+      return 'Android';
+    case 'macos':
+      return 'macOS';
+    case 'windows':
+      return 'Windows';
+    case 'linux':
+      return 'Linux';
+    default:
+      return 'sistema desconocido';
   }
 }

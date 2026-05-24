@@ -8,6 +8,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { getEnvironmentFilePaths } from '../config/environment-file-paths';
 import { validateEnvironment } from '../config/environment.validation';
 import { AttendancePolicyEntity } from '../database/entities/attendance-policy.entity';
+import { SessionEntity } from '../database/entities/session.entity';
 import { WorkplaceEntity } from '../database/entities/workplace.entity';
 import { TenancyModule } from '../tenancy/tenancy.module';
 import { AttendancePoliciesController } from './attendance-policies.controller';
@@ -33,7 +34,7 @@ export class AttendancePoliciesModule {
       imports: [
         JwtModule.register({}),
         TenancyModule,
-        TypeOrmModule.forFeature([AttendancePolicyEntity, WorkplaceEntity]),
+        TypeOrmModule.forFeature([AttendancePolicyEntity, SessionEntity, WorkplaceEntity]),
       ],
       module: AttendancePoliciesModule,
       providers: [AttendancePoliciesService, JwtAuthGuard, RolesGuard],

@@ -19,7 +19,7 @@ cp .env.example .env
 Supported variables:
 
 - `NODE_ENV`: `development`, `test`, or `production`.
-- `PORT`: HTTP port. Defaults to `3000`.
+- `PORT`: HTTP port. Defaults to `3004`.
 - `SERVICE_NAME`: service identifier used in health responses and logs.
 - `LOG_LEVEL`: Nest logger level: `error`, `warn`, `log`, `debug`, or `verbose`.
 - `DATABASE_ENABLED`: set `false` to skip PostgreSQL connection, defaults to `false` in tests and `true` otherwise.
@@ -87,5 +87,5 @@ npm run migration:revert
 ## Health
 
 ```sh
-curl http://localhost:3000/health
+curl http://localhost:3004/health
 ```

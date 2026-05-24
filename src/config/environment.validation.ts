@@ -23,6 +23,11 @@ export type EnvironmentVariables = {
   JWT_ISSUER: string;
   JWT_AUDIENCE: string;
   CORS_ALLOWED_ORIGINS: string[];
+  STRIPE_SECRET_KEY: string | null;
+  STRIPE_WEBHOOK_SECRET: string | null;
+  STRIPE_PRICE_ESSENTIAL: string | null;
+  STRIPE_PRICE_PRO: string | null;
+  STRIPE_PRICE_BUSINESS: string | null;
 };
 
 type RawEnvironment = Record<string, unknown>;
@@ -49,7 +54,12 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
   const defaultCorsOrigins =
     nodeEnvironment === 'production'
       ? ''
-      : 'http://localhost:4200,http://127.0.0.1:4200';
+      : [
+          'http://localhost:4204',
+          'http://127.0.0.1:4204',
+          'http://localhost:4304',
+          'http://127.0.0.1:4304',
+        ].join(',');
 
   return {
     CORS_ALLOWED_ORIGINS: parseStringList(
@@ -77,7 +87,7 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
       'DATABASE_PASSWORD',
       'change-me-local-only',
     ),
-    DATABASE_PORT: parsePort(config.DATABASE_PORT, 'DATABASE_PORT'),
+    DATABASE_PORT: parsePort(config.DATABASE_PORT, 'DATABASE_PORT', 5436),
     DATABASE_SSL: parseBoolean(config.DATABASE_SSL, 'DATABASE_SSL', false),
     DATABASE_USER: parseNonEmptyString(
       config.DATABASE_USER,
@@ -113,11 +123,31 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
     NODE_ENV: nodeEnvironment,
     PORT: port,
     SERVICE_NAME: serviceName,
+    STRIPE_PRICE_BUSINESS: parseOptionalNonEmptyString(
+      config.STRIPE_PRICE_BUSINESS,
+      'STRIPE_PRICE_BUSINESS',
+    ),
+    STRIPE_PRICE_ESSENTIAL: parseOptionalNonEmptyString(
+      config.STRIPE_PRICE_ESSENTIAL,
+      'STRIPE_PRICE_ESSENTIAL',
+    ),
+    STRIPE_PRICE_PRO: parseOptionalNonEmptyString(
+      config.STRIPE_PRICE_PRO,
+      'STRIPE_PRICE_PRO',
+    ),
+    STRIPE_SECRET_KEY: parseOptionalNonEmptyString(
+      config.STRIPE_SECRET_KEY,
+      'STRIPE_SECRET_KEY',
+    ),
+    STRIPE_WEBHOOK_SECRET: parseOptionalNonEmptyString(
+      config.STRIPE_WEBHOOK_SECRET,
+      'STRIPE_WEBHOOK_SECRET',
+    ),
   };
 }
 
-function parsePort(value: unknown, name = 'PORT'): number {
-  const rawPort = value ?? '3000';
+function parsePort(value: unknown, name = 'PORT', fallback = 3004): number {
+  const rawPort = value ?? fallback;
   const port = Number(rawPort);
 
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -203,6 +233,18 @@ function parseStringList(value: unknown, fallback: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+function parseOptionalNonEmptyString(value: unknown, name: string): string | null {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${name} must be a non-empty string when set.`);
+  }
+
+  return value.trim();
 }
 
 function parseEnumValue<const T extends readonly string[]>(

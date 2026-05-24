@@ -69,5 +69,16 @@ function getEnvironmentFromConfig(
     NODE_ENV: configService.get('NODE_ENV', { infer: true }),
     PORT: configService.get('PORT', { infer: true }),
     SERVICE_NAME: configService.get('SERVICE_NAME', { infer: true }),
+    STRIPE_PRICE_BUSINESS: configService.get('STRIPE_PRICE_BUSINESS', {
+      infer: true,
+    }),
+    STRIPE_PRICE_ESSENTIAL: configService.get('STRIPE_PRICE_ESSENTIAL', {
+      infer: true,
+    }),
+    STRIPE_PRICE_PRO: configService.get('STRIPE_PRICE_PRO', { infer: true }),
+    STRIPE_SECRET_KEY: configService.get('STRIPE_SECRET_KEY', { infer: true }),
+    STRIPE_WEBHOOK_SECRET: configService.get('STRIPE_WEBHOOK_SECRET', {
+      infer: true,
+    }),
   };
 }

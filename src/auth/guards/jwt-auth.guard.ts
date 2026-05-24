@@ -6,8 +6,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
+import { IsNull, MoreThan, Repository } from 'typeorm';
 
 import { EnvironmentVariables } from '../../config/environment.validation';
+import { SessionEntity } from '../../database/entities/session.entity';
 import { UserRole } from '../../domain/enums';
 import {
   AuthenticatedPrincipal,
@@ -22,6 +25,8 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly configService: ConfigService<EnvironmentVariables, true>,
     private readonly jwtService: JwtService,
+    @InjectRepository(SessionEntity)
+    private readonly sessionRepository: Repository<SessionEntity>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -43,6 +48,8 @@ export class JwtAuthGuard implements CanActivate {
         throw new UnauthorizedException('Invalid bearer token.');
       }
 
+      await this.assertSessionIsActive(payload);
+
       request.auth = payload;
 
       return true;
@@ -62,6 +69,25 @@ export class JwtAuthGuard implements CanActivate {
 
     return token.length > 0 ? token : null;
   }
+
+  private async assertSessionIsActive(auth: AuthenticatedPrincipal): Promise<void> {
+    if (auth.sessionId === undefined) {
+      return;
+    }
+
+    const activeSessionExists = await this.sessionRepository.exists({
+      where: {
+        expiresAt: MoreThan(new Date()),
+        id: auth.sessionId,
+        revokedAt: IsNull(),
+        userId: auth.sub,
+      },
+    });
+
+    if (!activeSessionExists) {
+      throw new UnauthorizedException('Session is no longer active.');
+    }
+  }
 }
 
 function isAuthenticatedPrincipal(value: unknown): value is AuthenticatedPrincipal {
@@ -69,6 +95,7 @@ function isAuthenticatedPrincipal(value: unknown): value is AuthenticatedPrincip
     isRecord(value) &&
     typeof value.sub === 'string' &&
     typeof value.email === 'string' &&
+    (value.sessionId === undefined || typeof value.sessionId === 'string') &&
     Array.isArray(value.roles) &&
     value.roles.every(isUserRole) &&
     Array.isArray(value.memberships) &&

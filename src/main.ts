@@ -12,6 +12,7 @@ import { getEnabledLogLevels } from './logging/logger-levels';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
+    rawBody: true,
   });
   const configService = app.get(ConfigService<EnvironmentVariables, true>);
   const logLevel = configService.get('LOG_LEVEL', { infer: true });

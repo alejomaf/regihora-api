@@ -7,18 +7,14 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { getEnvironmentFilePaths } from '../config/environment-file-paths';
 import { validateEnvironment } from '../config/environment.validation';
-import { AttendanceEventEntity } from '../database/entities/attendance-event.entity';
-import { AuditLogEntity } from '../database/entities/audit-log.entity';
-import { EmployeeEntity } from '../database/entities/employee.entity';
 import { SessionEntity } from '../database/entities/session.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
-import { WorkplaceEntity } from '../database/entities/workplace.entity';
 import { TenancyModule } from '../tenancy/tenancy.module';
-import { ReportsController } from './reports.controller';
-import { ReportsService } from './reports.service';
+import { BillingController } from './billing.controller';
+import { BillingService } from './billing.service';
 
 @Module({})
-export class ReportsModule {
+export class BillingModule {
   static forRoot(): DynamicModule {
     for (const path of getEnvironmentFilePaths()) {
       loadDotEnv({ path, override: false, quiet: true });
@@ -28,26 +24,20 @@ export class ReportsModule {
 
     if (!environment.DATABASE_ENABLED) {
       return {
-        module: ReportsModule,
+        module: BillingModule,
       };
     }
 
     return {
-      controllers: [ReportsController],
+      controllers: [BillingController],
+      exports: [BillingService],
       imports: [
         JwtModule.register({}),
         TenancyModule,
-        TypeOrmModule.forFeature([
-          AttendanceEventEntity,
-          AuditLogEntity,
-          EmployeeEntity,
-          SessionEntity,
-          TenantEntity,
-          WorkplaceEntity,
-        ]),
+        TypeOrmModule.forFeature([SessionEntity, TenantEntity]),
       ],
-      module: ReportsModule,
-      providers: [JwtAuthGuard, ReportsService, RolesGuard],
+      module: BillingModule,
+      providers: [BillingService, JwtAuthGuard, RolesGuard],
     };
   }
 }

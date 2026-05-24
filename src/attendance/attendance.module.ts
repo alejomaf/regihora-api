@@ -10,6 +10,7 @@ import { AttendanceEventEntity } from '../database/entities/attendance-event.ent
 import { AttendancePolicyEntity } from '../database/entities/attendance-policy.entity';
 import { DeviceEntity } from '../database/entities/device.entity';
 import { EmployeeEntity } from '../database/entities/employee.entity';
+import { SessionEntity } from '../database/entities/session.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
 import { WorkplaceEntity } from '../database/entities/workplace.entity';
 import { TenancyModule } from '../tenancy/tenancy.module';
@@ -42,6 +43,7 @@ export class AttendanceModule {
           AttendancePolicyEntity,
           DeviceEntity,
           EmployeeEntity,
+          SessionEntity,
           TenantEntity,
           WorkplaceEntity,
         ]),

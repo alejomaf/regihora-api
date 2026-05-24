@@ -1,12 +1,29 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { Request } from 'express';
 
+import { CurrentAuth } from './decorators/current-auth.decorator';
 import { AuthService } from './auth.service';
-import { AuthResponseDto } from './dto/auth-response.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AuthResponseDto, AuthSessionListResponseDto } from './dto/auth-response.dto';
 import { LoginRequestDto } from './dto/login-request.dto';
 import { LogoutRequestDto } from './dto/logout-request.dto';
+import { OwnerRegistrationRequestDto } from './dto/owner-registration-request.dto';
 import { RefreshTokenRequestDto } from './dto/refresh-token-request.dto';
-import { RequestAuthContext } from './types/authenticated-principal';
+import {
+  AuthenticatedPrincipal,
+  RequestAuthContext,
+} from './types/authenticated-principal';
 
 @Controller('v1/auth')
 export class AuthController {
@@ -19,6 +36,17 @@ export class AuthController {
     @Req() httpRequest: Request,
   ): Promise<AuthResponseDto> {
     return this.authService.login(request, getRequestAuthContext(httpRequest));
+  }
+
+  @Post('register-owner')
+  registerOwner(
+    @Body() request: OwnerRegistrationRequestDto,
+    @Req() httpRequest: Request,
+  ): Promise<AuthResponseDto> {
+    return this.authService.registerOwner(
+      request,
+      getRequestAuthContext(httpRequest),
+    );
   }
 
   @Post('refresh')
@@ -34,6 +62,33 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   logout(@Body() request: LogoutRequestDto): Promise<void> {
     return this.authService.logout(request);
+  }
+
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  listSessions(
+    @CurrentAuth() auth: AuthenticatedPrincipal,
+  ): Promise<AuthSessionListResponseDto> {
+    return this.authService.listSessions(auth);
+  }
+
+  @Post('sessions/revoke-others')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  revokeOtherSessions(
+    @CurrentAuth() auth: AuthenticatedPrincipal,
+  ): Promise<AuthSessionListResponseDto> {
+    return this.authService.revokeOtherSessions(auth);
+  }
+
+  @Delete('sessions/:sessionId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  revokeSession(
+    @CurrentAuth() auth: AuthenticatedPrincipal,
+    @Param('sessionId') sessionId: string,
+  ): Promise<void> {
+    return this.authService.revokeSession(auth, sessionId);
   }
 }
 
@@ -51,4 +106,3 @@ function getHeaderValue(value: string | string[] | undefined): string | null {
 
   return value ?? null;
 }
-

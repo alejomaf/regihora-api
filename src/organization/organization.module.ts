@@ -10,6 +10,7 @@ import { validateEnvironment } from '../config/environment.validation';
 import { AttendancePolicyEntity } from '../database/entities/attendance-policy.entity';
 import { DepartmentEntity } from '../database/entities/department.entity';
 import { EmployeeEntity } from '../database/entities/employee.entity';
+import { SessionEntity } from '../database/entities/session.entity';
 import { WorkplaceEntity } from '../database/entities/workplace.entity';
 import { TenancyModule } from '../tenancy/tenancy.module';
 import { DepartmentsController } from './departments/departments.controller';
@@ -47,6 +48,7 @@ export class OrganizationModule {
           AttendancePolicyEntity,
           DepartmentEntity,
           EmployeeEntity,
+          SessionEntity,
           WorkplaceEntity,
         ]),
       ],

@@ -7,6 +7,7 @@ import { getEnvironmentFilePaths } from '../config/environment-file-paths';
 import { validateEnvironment } from '../config/environment.validation';
 import { EmployeeEntity } from '../database/entities/employee.entity';
 import { SessionEntity } from '../database/entities/session.entity';
+import { TenantEntity } from '../database/entities/tenant.entity';
 import { UserEntity } from '../database/entities/user.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -34,7 +35,7 @@ export class AuthModule {
       exports: [AuthService, JwtAuthGuard, RolesGuard, PasswordHasher],
       imports: [
         JwtModule.register({}),
-        TypeOrmModule.forFeature([UserEntity, SessionEntity, EmployeeEntity]),
+        TypeOrmModule.forFeature([UserEntity, SessionEntity, TenantEntity, EmployeeEntity]),
       ],
       module: AuthModule,
       providers: [AuthService, JwtAuthGuard, RolesGuard, PasswordHasher],

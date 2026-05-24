@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AdjustmentsModule } from './adjustments/adjustments.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { AttendancePoliciesModule } from './attendance-policies/attendance-policies.module';
+import { BillingModule } from './billing/billing.module';
 import { getEnvironmentFilePaths } from './config/environment-file-paths';
 import { validateEnvironment } from './config/environment.validation';
 import { AuthModule } from './auth/auth.module';
@@ -13,6 +14,7 @@ import { RequestLoggerMiddleware } from './logging/request-logger.middleware';
 import { OrganizationModule } from './organization/organization.module';
 import { QrDevicesModule } from './qr-devices/qr-devices.module';
 import { ReportsModule } from './reports/reports.module';
+import { SettingsModule } from './settings/settings.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
 @Module({
@@ -31,6 +33,8 @@ import { TenancyModule } from './tenancy/tenancy.module';
     AdjustmentsModule.forRoot(),
     QrDevicesModule.forRoot(),
     ReportsModule.forRoot(),
+    BillingModule.forRoot(),
+    SettingsModule.forRoot(),
     OrganizationModule.forRoot(),
     HealthModule,
   ],

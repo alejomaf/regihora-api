@@ -230,7 +230,7 @@ export class AttendanceService {
       return toAttendancePunchDto(existingEvent);
     }
 
-    const tenant = await this.getTenant(device.tenantId);
+    await this.getTenant(device.tenantId);
     const policy = await this.getActivePolicy(device.tenantId, employee.attendancePolicyId);
     const workplace = await this.getValidatedWorkplace(
       device.tenantId,
@@ -251,7 +251,7 @@ export class AttendanceService {
       throw new NotFoundException('Turnstile workplace not found.');
     }
 
-    const expectedTimezone = workplace.timezone ?? tenant.timezone;
+    const expectedTimezone = workplace.timezone;
 
     validateTimezone(expectedTimezone, 'tenant/workplace timezone');
     validateDeviceTimezone(parsedRequest.deviceContext.timezone, expectedTimezone);

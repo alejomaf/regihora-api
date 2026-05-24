@@ -4,6 +4,7 @@ import { UserRole } from '../../domain/enums';
 
 export type JwtMembership = {
   tenantId: string;
+  tenantName?: string;
   employeeId: string;
   roles: UserRole[];
 };
@@ -13,6 +14,7 @@ export type AuthenticatedPrincipal = {
   email: string;
   roles: UserRole[];
   memberships: JwtMembership[];
+  sessionId?: string;
 };
 
 export type AuthenticatedRequest = Request & {
@@ -23,4 +25,3 @@ export type RequestAuthContext = {
   ipAddress: string | null;
   userAgent: string | null;
 };
-

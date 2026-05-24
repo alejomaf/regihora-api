@@ -10,7 +10,10 @@ import { DataSource, type Repository } from 'typeorm';
 import type { AttendanceAdjustmentDto } from '../src/adjustments/dto/adjustment.dto';
 import type { AttendancePunchDto } from '../src/attendance/dto/attendance-punch.dto';
 import type { AttendancePolicyDto } from '../src/attendance-policies/dto/attendance-policy.dto';
-import type { AuthResponseDto } from '../src/auth/dto/auth-response.dto';
+import type {
+  AuthResponseDto,
+  AuthSessionListResponseDto,
+} from '../src/auth/dto/auth-response.dto';
 import { PasswordHasher } from '../src/auth/password/password-hasher.service';
 import { validateEnvironment } from '../src/config/environment.validation';
 import {
@@ -48,6 +51,7 @@ import type {
   QrDeviceEnrollmentTokenDto,
   QrDeviceHeartbeatDto,
 } from '../src/qr-devices/dto/qr-device.dto';
+import type { SecuritySettingsDto } from '../src/settings/dto/security-settings.dto';
 
 const runDatabaseE2e = process.env.REGIHORA_E2E_DATABASE === 'true';
 const describeDatabaseE2e = runDatabaseE2e ? describe : describe.skip;
@@ -160,6 +164,37 @@ describeDatabaseE2e('QA OpenAPI matrix e2e', () => {
       'login',
       'owner.qa@regihora.test',
     );
+    const activeSessions = await listAuthSessions(qa.server, actingOwnerAuth);
+    expect(activeSessions.data.length).toBeGreaterThanOrEqual(1);
+    const sessionToRevokeAuth = await login(
+      qa.server,
+      'login',
+      'owner.qa@regihora.test',
+    );
+    await revokeAuthSession(
+      qa.server,
+      actingOwnerAuth,
+      sessionToRevokeAuth.currentSession.id,
+    );
+    await login(qa.server, 'login', 'owner.qa@regihora.test');
+    const remainingSessions = await revokeOtherAuthSessions(
+      qa.server,
+      actingOwnerAuth,
+    );
+    expect(remainingSessions.data).toHaveLength(1);
+
+    const securitySettings = await getSecuritySettings(
+      qa.server,
+      auditorAuth,
+      tenantId,
+    );
+    expect(securitySettings.sessionDeviceLimit).toBeNull();
+    const updatedSecuritySettings = await updateSecuritySettings(
+      qa.server,
+      actingOwnerAuth,
+      tenantId,
+    );
+    expect(updatedSecuritySettings.sessionDeviceLimit).toBe(3);
 
     await authorize(
       request(qa.server).get('/v1/employees'),
@@ -794,6 +829,81 @@ async function refreshSession(
 async function logout(server: TestServer, refreshToken: string): Promise<void> {
   await request(server).post('/v1/auth/logout').send({ refreshToken }).expect(204);
   cover('logout');
+}
+
+async function listAuthSessions(
+  server: TestServer,
+  auth: AuthResponseDto,
+): Promise<AuthSessionListResponseDto> {
+  const response = await request(server)
+    .get('/v1/auth/sessions')
+    .set('Authorization', `${auth.tokenType} ${auth.accessToken}`)
+    .expect(200);
+
+  cover('listAuthSessions');
+
+  return responseBody(response) as AuthSessionListResponseDto;
+}
+
+async function revokeOtherAuthSessions(
+  server: TestServer,
+  auth: AuthResponseDto,
+): Promise<AuthSessionListResponseDto> {
+  const response = await request(server)
+    .post('/v1/auth/sessions/revoke-others')
+    .set('Authorization', `${auth.tokenType} ${auth.accessToken}`)
+    .expect(200);
+
+  cover('revokeOtherAuthSessions');
+
+  return responseBody(response) as AuthSessionListResponseDto;
+}
+
+async function revokeAuthSession(
+  server: TestServer,
+  auth: AuthResponseDto,
+  sessionId: string,
+): Promise<void> {
+  await request(server)
+    .delete(`/v1/auth/sessions/${sessionId}`)
+    .set('Authorization', `${auth.tokenType} ${auth.accessToken}`)
+    .expect(204);
+
+  cover('revokeAuthSession');
+}
+
+async function getSecuritySettings(
+  server: TestServer,
+  auth: AuthResponseDto,
+  tenantId: string,
+): Promise<SecuritySettingsDto> {
+  const response = await authorize(
+    request(server).get('/v1/settings/security'),
+    auth,
+    tenantId,
+  ).expect(200);
+
+  cover('getSecuritySettings');
+
+  return responseBody(response) as SecuritySettingsDto;
+}
+
+async function updateSecuritySettings(
+  server: TestServer,
+  auth: AuthResponseDto,
+  tenantId: string,
+): Promise<SecuritySettingsDto> {
+  const response = await authorize(
+    request(server).patch('/v1/settings/security'),
+    auth,
+    tenantId,
+  )
+    .send({ sessionDeviceLimit: 3 })
+    .expect(200);
+
+  cover('updateSecuritySettings');
+
+  return responseBody(response) as SecuritySettingsDto;
 }
 
 async function createDepartment(
