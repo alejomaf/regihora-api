@@ -75,6 +75,7 @@ export class InternalAdminController {
         invite: true,
         update: false,
         grantEntitlement: true,
+        activity: true,
       },
       issues: {
         list: true,
@@ -163,6 +164,48 @@ export class InternalAdminController {
     }
 
     return toAdminUser(employee);
+  }
+
+  @Get('users/:id/activity')
+  async userActivity(@Param('id') id: string, @Query('limit') rawLimit?: string) {
+    const limit = clampLimit(rawLimit);
+    const employee = await this.employeeRepository.findOne({
+      where: { id },
+      relations: { tenant: true, user: true },
+    });
+
+    if (employee === null) {
+      throw new NotFoundException('Employee not found.');
+    }
+
+    const query = this.auditRepository
+      .createQueryBuilder('audit')
+      .where('audit.actorEmployeeId = :employeeId', { employeeId: employee.id })
+      .orWhere('audit.entityId = :employeeId', { employeeId: employee.id });
+
+    if (employee.userId) {
+      query.orWhere('audit.actorUserId = :userId', { userId: employee.userId });
+    }
+
+    const logs = await query.orderBy('audit.occurredAt', 'DESC').take(limit).getMany();
+
+    return {
+      data: logs.map((log) => ({
+        id: log.id,
+        userId: employee.id,
+        action: log.action,
+        label: `${log.action} · ${log.entityType}`,
+        category: log.entityType,
+        targetType: log.entityType,
+        targetId: log.entityId,
+        occurredAt: log.occurredAt.toISOString(),
+        metadata: log.metadata,
+        raw: log,
+      })),
+      total: logs.length,
+      page: 1,
+      limit,
+    };
   }
 
   @Post('users/invite')
