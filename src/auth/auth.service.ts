@@ -19,6 +19,7 @@ import { EmployeeInvitationEntity } from '../database/entities/employee-invitati
 import { SessionEntity } from '../database/entities/session.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
 import { UserEntity } from '../database/entities/user.entity';
+import { AuthPublicConfigDto } from './dto/auth-public-config.dto';
 import {
   AuthMembershipDto,
   AuthResponseDto,
@@ -69,6 +70,17 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly passwordHasher: PasswordHasher,
   ) {}
+
+  getPublicConfig(): AuthPublicConfigDto {
+    const clientId = this.configService.get('GOOGLE_OAUTH_CLIENT_ID', { infer: true });
+
+    return {
+      googleSso: {
+        clientId,
+        enabled: clientId !== null,
+      },
+    };
+  }
 
   async login(
     request: LoginRequestDto,

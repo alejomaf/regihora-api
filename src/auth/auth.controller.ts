@@ -15,6 +15,7 @@ import { Request } from 'express';
 import { CurrentAuth } from './decorators/current-auth.decorator';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AuthPublicConfigDto } from './dto/auth-public-config.dto';
 import { AuthResponseDto, AuthSessionListResponseDto } from './dto/auth-response.dto';
 import {
   AcceptEmployeeInvitationRequestDto,
@@ -33,6 +34,11 @@ import {
 @Controller('v1/auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Get('config')
+  getPublicConfig(): AuthPublicConfigDto {
+    return this.authService.getPublicConfig();
+  }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)

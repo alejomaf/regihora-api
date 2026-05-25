@@ -34,6 +34,37 @@ const safariIphoneUserAgent =
   '(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 
 describe(AuthService.name, () => {
+  it('publishes the Google SSO client config when configured', () => {
+    const service = makeService({
+      googleClientId: 'google-client-id.apps.googleusercontent.com',
+      savedSessions: [],
+      sessions: [],
+      user: null,
+    });
+
+    expect(service.getPublicConfig()).toEqual({
+      googleSso: {
+        clientId: 'google-client-id.apps.googleusercontent.com',
+        enabled: true,
+      },
+    });
+  });
+
+  it('publishes disabled Google SSO config when no client is configured', () => {
+    const service = makeService({
+      savedSessions: [],
+      sessions: [],
+      user: null,
+    });
+
+    expect(service.getPublicConfig()).toEqual({
+      googleSso: {
+        clientId: null,
+        enabled: false,
+      },
+    });
+  });
+
   it('registers a self-service owner, tenant, and active owner membership', async () => {
     const { employees, service, tenants, users } = makeRegistrationService();
 
