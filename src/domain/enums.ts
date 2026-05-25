@@ -61,6 +61,20 @@ export enum AdjustmentStatus {
   REJECTED = 'REJECTED',
 }
 
+export enum SupportTicketStatus {
+  OPEN = 'OPEN',
+  IN_PROGRESS = 'IN_PROGRESS',
+  RESOLVED = 'RESOLVED',
+  CLOSED = 'CLOSED',
+}
+
+export enum SupportTicketPriority {
+  LOW = 'LOW',
+  NORMAL = 'NORMAL',
+  HIGH = 'HIGH',
+  URGENT = 'URGENT',
+}
+
 export enum ReportFormat {
   CSV = 'CSV',
   XLSX = 'XLSX',

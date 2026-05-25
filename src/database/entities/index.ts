@@ -7,6 +7,8 @@ import { DepartmentEntity } from './department.entity';
 import { DeviceEntity } from './device.entity';
 import { EmployeeEntity } from './employee.entity';
 import { SessionEntity } from './session.entity';
+import { SupportTicketEntity } from './support-ticket.entity';
+import { SupportTicketMessageEntity } from './support-ticket-message.entity';
 import { TenantEntity } from './tenant.entity';
 import { UserEntity } from './user.entity';
 import { WorkplaceEntity } from './workplace.entity';
@@ -21,6 +23,8 @@ export const databaseEntities = [
   DeviceEntity,
   EmployeeEntity,
   SessionEntity,
+  SupportTicketEntity,
+  SupportTicketMessageEntity,
   TenantEntity,
   UserEntity,
   WorkplaceEntity,
@@ -36,6 +40,8 @@ export {
   DeviceEntity,
   EmployeeEntity,
   SessionEntity,
+  SupportTicketEntity,
+  SupportTicketMessageEntity,
   TenantEntity,
   UserEntity,
   WorkplaceEntity,

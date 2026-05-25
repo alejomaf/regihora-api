@@ -10,6 +10,7 @@ import { validateEnvironment } from './config/environment.validation';
 import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
+import { InternalAdminModule } from './internal-admin/internal-admin.module';
 import { RequestLoggerMiddleware } from './logging/request-logger.middleware';
 import { OrganizationModule } from './organization/organization.module';
 import { QrDevicesModule } from './qr-devices/qr-devices.module';
@@ -37,6 +38,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
     SettingsModule.forRoot(),
     OrganizationModule.forRoot(),
     HealthModule,
+    InternalAdminModule,
   ],
 })
 export class AppModule implements NestModule {
