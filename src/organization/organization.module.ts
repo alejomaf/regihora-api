@@ -8,10 +8,15 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { getEnvironmentFilePaths } from '../config/environment-file-paths';
 import { validateEnvironment } from '../config/environment.validation';
 import { AttendancePolicyEntity } from '../database/entities/attendance-policy.entity';
+import { AuditLogEntity } from '../database/entities/audit-log.entity';
 import { DepartmentEntity } from '../database/entities/department.entity';
 import { EmployeeEntity } from '../database/entities/employee.entity';
+import { EmployeeInvitationEntity } from '../database/entities/employee-invitation.entity';
 import { SessionEntity } from '../database/entities/session.entity';
+import { TenantEntity } from '../database/entities/tenant.entity';
+import { UserEntity } from '../database/entities/user.entity';
 import { WorkplaceEntity } from '../database/entities/workplace.entity';
+import { EmailService } from '../notifications/email.service';
 import { TenancyModule } from '../tenancy/tenancy.module';
 import { DepartmentsController } from './departments/departments.controller';
 import { DepartmentsService } from './departments/departments.service';
@@ -46,9 +51,13 @@ export class OrganizationModule {
         TenancyModule,
         TypeOrmModule.forFeature([
           AttendancePolicyEntity,
+          AuditLogEntity,
           DepartmentEntity,
           EmployeeEntity,
+          EmployeeInvitationEntity,
           SessionEntity,
+          TenantEntity,
+          UserEntity,
           WorkplaceEntity,
         ]),
       ],
@@ -56,6 +65,7 @@ export class OrganizationModule {
       providers: [
         DepartmentsService,
         EmployeesService,
+        EmailService,
         JwtAuthGuard,
         RolesGuard,
         WorkplacesService,

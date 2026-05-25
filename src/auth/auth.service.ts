@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import {
   BadRequestException,
@@ -15,6 +15,7 @@ import { In, IsNull, MoreThan, Repository } from 'typeorm';
 import { EnvironmentVariables } from '../config/environment.validation';
 import { BillingStatus, EmployeeStatus, TenantPlan, UserRole } from '../domain/enums';
 import { EmployeeEntity } from '../database/entities/employee.entity';
+import { EmployeeInvitationEntity } from '../database/entities/employee-invitation.entity';
 import { SessionEntity } from '../database/entities/session.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
 import { UserEntity } from '../database/entities/user.entity';
@@ -24,6 +25,10 @@ import {
   AuthSessionListResponseDto,
   AuthUserSessionDto,
 } from './dto/auth-response.dto';
+import {
+  AcceptEmployeeInvitationRequestDto,
+  EmployeeInvitationAuthPreviewDto,
+} from './dto/employee-invitation-auth.dto';
 import { GoogleSsoLoginRequestDto } from './dto/google-sso-login-request.dto';
 import { LoginRequestDto } from './dto/login-request.dto';
 import { OwnerRegistrationRequestDto } from './dto/owner-registration-request.dto';
@@ -58,6 +63,8 @@ export class AuthService {
     private readonly sessionRepository: Repository<SessionEntity>,
     @InjectRepository(TenantEntity)
     private readonly tenantRepository: Repository<TenantEntity>,
+    @InjectRepository(EmployeeInvitationEntity)
+    private readonly employeeInvitationRepository: Repository<EmployeeInvitationEntity>,
     private readonly configService: ConfigService<EnvironmentVariables, true>,
     private readonly jwtService: JwtService,
     private readonly passwordHasher: PasswordHasher,
@@ -211,6 +218,103 @@ export class AuthService {
     return this.createSessionResponse(created, context, false);
   }
 
+  async getEmployeeInvitation(
+    token: string,
+  ): Promise<EmployeeInvitationAuthPreviewDto> {
+    const invitation = await this.getPendingInvitationByToken(token);
+
+    return {
+      displayName: invitation.employee.displayName,
+      email: invitation.email,
+      expiresAt: invitation.expiresAt.toISOString(),
+      requiresPassword: true,
+      tenantName: invitation.tenant.legalName,
+    };
+  }
+
+  async acceptEmployeeInvitation(
+    request: AcceptEmployeeInvitationRequestDto,
+    context: RequestAuthContext,
+  ): Promise<AuthResponseDto> {
+    const token = this.parsePublicString(request.token, 'token', 32, 512);
+    const tokenHash = hashEmployeeInvitationToken(token);
+    const acceptedUserId = await this.userRepository.manager.transaction(
+      async (manager) => {
+        const userRepository = manager.getRepository(UserEntity);
+        const employeeRepository = manager.getRepository(EmployeeEntity);
+        const invitationRepository = manager.getRepository(EmployeeInvitationEntity);
+        const invitation = await invitationRepository.findOne({
+          relations: {
+            employee: true,
+            tenant: true,
+          },
+          where: {
+            tokenHash,
+          },
+        });
+
+        this.assertInvitationCanBeAccepted(invitation);
+
+        const employee = invitation.employee;
+        const email = invitation.email.toLowerCase();
+
+        if (employee.email.toLowerCase() !== email) {
+          throw new BadRequestException('Invitation no longer matches employee email.');
+        }
+
+        let user = await findUserByEmail(userRepository, email);
+        const password = this.parsePassword(request.password);
+
+        if (user === null) {
+          user = await userRepository.save(
+            userRepository.create({
+              displayName: employee.displayName,
+              email,
+              isActive: true,
+              passwordHash: await this.passwordHasher.hash(password),
+            }),
+          );
+        } else {
+          if (!user.isActive) {
+            throw new ConflictException('User account is inactive.');
+          }
+
+          if (user.passwordHash === null) {
+            user.passwordHash = await this.passwordHasher.hash(password);
+            user = await userRepository.save(user);
+          } else if (!(await this.passwordHasher.verify(user.passwordHash, password))) {
+            throw new UnauthorizedException('Invalid email or password.');
+          }
+        }
+
+        if (employee.userId !== null && employee.userId !== user.id) {
+          throw new ConflictException('Employee is already linked to another user.');
+        }
+
+        employee.status = EmployeeStatus.ACTIVE;
+        employee.userId = user.id;
+        invitation.acceptedAt = new Date();
+
+        await employeeRepository.save(employee);
+        await invitationRepository.save(invitation);
+
+        return user.id;
+      },
+    );
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.employees', 'employee')
+      .where('user.id = :id', { id: acceptedUserId })
+      .andWhere('user.is_active = true')
+      .getOne();
+
+    if (user === null) {
+      throw new UnauthorizedException('User is inactive.');
+    }
+
+    return this.createSessionResponse(user, context, false);
+  }
+
   async refresh(
     request: RefreshTokenRequestDto,
     context: RequestAuthContext,
@@ -355,6 +459,47 @@ export class AuthService {
       .where('LOWER(user.email) = :email', { email })
       .andWhere('user.is_active = true')
       .getOne();
+  }
+
+  private async getPendingInvitationByToken(
+    token: string,
+  ): Promise<EmployeeInvitationEntity & { employee: EmployeeEntity; tenant: TenantEntity }> {
+    const invitation = await this.employeeInvitationRepository.findOne({
+      relations: {
+        employee: true,
+        tenant: true,
+      },
+      where: {
+        tokenHash: hashEmployeeInvitationToken(token),
+      },
+    });
+
+    this.assertInvitationCanBeAccepted(invitation);
+
+    return invitation;
+  }
+
+  private assertInvitationCanBeAccepted(
+    invitation: EmployeeInvitationEntity | null,
+  ): asserts invitation is EmployeeInvitationEntity & {
+    employee: EmployeeEntity;
+    tenant: TenantEntity;
+  } {
+    if (invitation === null) {
+      throw new NotFoundException('Invitation not found.');
+    }
+
+    if (invitation.revokedAt !== null || invitation.acceptedAt !== null) {
+      throw new BadRequestException('Invitation is no longer valid.');
+    }
+
+    if (invitation.expiresAt <= new Date()) {
+      throw new BadRequestException('Invitation has expired.');
+    }
+
+    if (invitation.employee.status === EmployeeStatus.INACTIVE) {
+      throw new BadRequestException('Employee is inactive.');
+    }
   }
 
   private async fetchGoogleTokenInfo(credential: string): Promise<GoogleTokenInfo> {
@@ -530,7 +675,7 @@ export class AuthService {
     const tenantIds = [
       ...new Set(
         employees
-          .filter((employee) => employee.status !== EmployeeStatus.INACTIVE)
+          .filter((employee) => employee.status === EmployeeStatus.ACTIVE)
           .map((employee) => employee.tenantId),
       ),
     ];
@@ -620,7 +765,7 @@ export class AuthService {
 
   private async getActiveMemberships(employees: EmployeeEntity[]): Promise<AuthMembershipDto[]> {
     const activeEmployees = employees.filter(
-      (employee) => employee.status !== EmployeeStatus.INACTIVE,
+      (employee) => employee.status === EmployeeStatus.ACTIVE,
     );
     const tenantIds = [...new Set(activeEmployees.map((employee) => employee.tenantId))];
     const tenants =
@@ -738,6 +883,20 @@ function validateTimezone(timezone: string, name: string): void {
   } catch {
     throw new BadRequestException(`${name} must be a valid IANA timezone.`);
   }
+}
+
+function findUserByEmail(
+  userRepository: Repository<UserEntity>,
+  email: string,
+): Promise<UserEntity | null> {
+  return userRepository
+    .createQueryBuilder('user')
+    .where('LOWER(user.email) = :email', { email })
+    .getOne();
+}
+
+function hashEmployeeInvitationToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 function toIsoString(value: Date): string {

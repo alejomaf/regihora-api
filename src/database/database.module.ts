@@ -68,6 +68,18 @@ function getEnvironmentFromConfig(
     GOOGLE_OAUTH_CLIENT_ID: configService.get('GOOGLE_OAUTH_CLIENT_ID', {
       infer: true,
     }),
+    WEBAPP_BASE_URL: configService.get('WEBAPP_BASE_URL', { infer: true }),
+    EMPLOYEE_INVITATION_TTL_HOURS: configService.get(
+      'EMPLOYEE_INVITATION_TTL_HOURS',
+      { infer: true },
+    ),
+    EMAIL_DELIVERY_MODE: configService.get('EMAIL_DELIVERY_MODE', { infer: true }),
+    EMAIL_FROM: configService.get('EMAIL_FROM', { infer: true }),
+    SMTP_HOST: configService.get('SMTP_HOST', { infer: true }),
+    SMTP_PORT: configService.get('SMTP_PORT', { infer: true }),
+    SMTP_SECURE: configService.get('SMTP_SECURE', { infer: true }),
+    SMTP_USER: configService.get('SMTP_USER', { infer: true }),
+    SMTP_PASSWORD: configService.get('SMTP_PASSWORD', { infer: true }),
     LOG_LEVEL: configService.get('LOG_LEVEL', { infer: true }),
     NODE_ENV: configService.get('NODE_ENV', { infer: true }),
     PORT: configService.get('PORT', { infer: true }),

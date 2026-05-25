@@ -13,8 +13,10 @@ import {
 } from '@nestjs/common';
 
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { CurrentAuth } from '../../auth/decorators/current-auth.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
+import { AuthenticatedPrincipal } from '../../auth/types/authenticated-principal';
 import { UserRole } from '../../domain/enums';
 import { CurrentTenant } from '../../tenancy/decorators/current-tenant.decorator';
 import { TenantGuard } from '../../tenancy/guards/tenant.guard';
@@ -57,10 +59,16 @@ export class EmployeesController {
   @Post('imports')
   @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   importCsv(
+    @CurrentAuth() auth: AuthenticatedPrincipal,
     @CurrentTenant() tenant: CurrentTenantContext,
     @Body() request: EmployeeCsvImportRequestDto | string,
   ): Promise<EmployeeCsvImportResponseDto> {
-    return this.employeesService.importCsv(tenant.tenantId, request);
+    return this.employeesService.importCsv(
+      tenant.tenantId,
+      request,
+      auth.sub,
+      tenant.employeeId,
+    );
   }
 
   @Get(':employeeId')
@@ -95,9 +103,15 @@ export class EmployeesController {
   @Post(':employeeId/invite')
   @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   invite(
+    @CurrentAuth() auth: AuthenticatedPrincipal,
     @CurrentTenant() tenant: CurrentTenantContext,
     @Param('employeeId') employeeId: string,
   ): Promise<EmployeeInvitationDto> {
-    return this.employeesService.invite(tenant.tenantId, employeeId);
+    return this.employeesService.invite(
+      tenant.tenantId,
+      employeeId,
+      auth.sub,
+      tenant.employeeId,
+    );
   }
 }

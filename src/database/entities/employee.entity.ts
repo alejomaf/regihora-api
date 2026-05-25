@@ -17,6 +17,7 @@ import { AttendanceEventEntity } from './attendance-event.entity';
 import { AttendancePolicyEntity } from './attendance-policy.entity';
 import { AuditLogEntity } from './audit-log.entity';
 import { DepartmentEntity } from './department.entity';
+import { EmployeeInvitationEntity } from './employee-invitation.entity';
 import { TenantEntity } from './tenant.entity';
 import { UserEntity } from './user.entity';
 import { WorkplaceEntity } from './workplace.entity';
@@ -115,4 +116,7 @@ export class EmployeeEntity {
 
   @OneToMany(() => AuditLogEntity, (auditLog) => auditLog.actorEmployee)
   auditLogs!: AuditLogEntity[];
+
+  @OneToMany(() => EmployeeInvitationEntity, (invitation) => invitation.employee)
+  invitations!: EmployeeInvitationEntity[];
 }

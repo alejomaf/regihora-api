@@ -16,6 +16,10 @@ import { CurrentAuth } from './decorators/current-auth.decorator';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthResponseDto, AuthSessionListResponseDto } from './dto/auth-response.dto';
+import {
+  AcceptEmployeeInvitationRequestDto,
+  EmployeeInvitationAuthPreviewDto,
+} from './dto/employee-invitation-auth.dto';
 import { GoogleSsoLoginRequestDto } from './dto/google-sso-login-request.dto';
 import { LoginRequestDto } from './dto/login-request.dto';
 import { LogoutRequestDto } from './dto/logout-request.dto';
@@ -57,6 +61,25 @@ export class AuthController {
     @Req() httpRequest: Request,
   ): Promise<AuthResponseDto> {
     return this.authService.registerOwner(
+      request,
+      getRequestAuthContext(httpRequest),
+    );
+  }
+
+  @Get('employee-invitations/:token')
+  getEmployeeInvitation(
+    @Param('token') token: string,
+  ): Promise<EmployeeInvitationAuthPreviewDto> {
+    return this.authService.getEmployeeInvitation(token);
+  }
+
+  @Post('employee-invitations/accept')
+  @HttpCode(HttpStatus.OK)
+  acceptEmployeeInvitation(
+    @Body() request: AcceptEmployeeInvitationRequestDto,
+    @Req() httpRequest: Request,
+  ): Promise<AuthResponseDto> {
+    return this.authService.acceptEmployeeInvitation(
       request,
       getRequestAuthContext(httpRequest),
     );

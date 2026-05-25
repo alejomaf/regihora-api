@@ -97,7 +97,11 @@ export type EmployeeUpdateRequestDto = {
 };
 
 export type EmployeeInvitationDto = {
+  acceptUrl: string;
+  deliveryStatus: 'DISABLED' | 'FAILED' | 'LOGGED' | 'SENT';
+  emailSent: boolean;
   employee: EmployeeDto;
+  expiresAt: string;
   invited: boolean;
 };
 

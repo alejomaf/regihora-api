@@ -14,6 +14,7 @@ import type {
   AuthResponseDto,
   AuthSessionListResponseDto,
 } from '../src/auth/dto/auth-response.dto';
+import type { EmployeeInvitationAuthPreviewDto } from '../src/auth/dto/employee-invitation-auth.dto';
 import { PasswordHasher } from '../src/auth/password/password-hasher.service';
 import { validateEnvironment } from '../src/config/environment.validation';
 import {
@@ -315,7 +316,19 @@ describeDatabaseE2e('QA OpenAPI matrix e2e', () => {
       displayName: 'Empleado CRUD QA actualizado',
       status: EmployeeStatus.ACTIVE,
     });
-    await inviteEmployee(qa.server, actingOwnerAuth, tenantId, employeeForCrud.id);
+    const invitation = await inviteEmployee(
+      qa.server,
+      actingOwnerAuth,
+      tenantId,
+      employeeForCrud.id,
+    );
+    const invitationToken = getInvitationToken(invitation.acceptUrl);
+    const invitationPreview = await getEmployeeInvitation(
+      qa.server,
+      invitationToken,
+    );
+    expect(invitationPreview.requiresPassword).toBe(true);
+    await acceptEmployeeInvitation(qa.server, invitationToken);
     await deleteEmployee(qa.server, actingOwnerAuth, tenantId, employeeForCrud.id);
     await importEmployeesCsv(
       qa.server,
@@ -1281,6 +1294,33 @@ async function inviteEmployee(
   return responseBody(response) as EmployeeInvitationDto;
 }
 
+async function getEmployeeInvitation(
+  server: TestServer,
+  token: string,
+): Promise<EmployeeInvitationAuthPreviewDto> {
+  const response = await request(server)
+    .get(`/v1/auth/employee-invitations/${token}`)
+    .expect(200);
+
+  cover('getEmployeeInvitation');
+
+  return responseBody(response) as EmployeeInvitationAuthPreviewDto;
+}
+
+async function acceptEmployeeInvitation(
+  server: TestServer,
+  token: string,
+): Promise<AuthResponseDto> {
+  const response = await request(server)
+    .post('/v1/auth/employee-invitations/accept')
+    .send({ password: qaPassword, token })
+    .expect(200);
+
+  cover('acceptEmployeeInvitation');
+
+  return responseBody(response) as AuthResponseDto;
+}
+
 async function importEmployeesCsv(
   server: TestServer,
   auth: AuthResponseDto,
@@ -1681,6 +1721,16 @@ function authorize(test: Test, auth: AuthResponseDto, tenantId: string): Test {
 
 function responseBody(response: Response): unknown {
   return response.body;
+}
+
+function getInvitationToken(acceptUrl: string): string {
+  const token = new URL(acceptUrl).searchParams.get('token');
+
+  if (token === null) {
+    throw new Error('Invitation URL does not include token.');
+  }
+
+  return token;
 }
 
 function readMatrixOperationIds(): string[] {

@@ -12,6 +12,7 @@ import { AttendanceAdjustmentEntity } from './attendance-adjustment.entity';
 import { AttendanceEventEntity } from './attendance-event.entity';
 import { AuditLogEntity } from './audit-log.entity';
 import { EmployeeEntity } from './employee.entity';
+import { EmployeeInvitationEntity } from './employee-invitation.entity';
 import { SessionEntity } from './session.entity';
 
 @Entity({ name: 'users' })
@@ -55,5 +56,7 @@ export class UserEntity {
 
   @OneToMany(() => AuditLogEntity, (auditLog) => auditLog.actorUser)
   auditLogs!: AuditLogEntity[];
-}
 
+  @OneToMany(() => EmployeeInvitationEntity, (invitation) => invitation.invitedByUser)
+  sentEmployeeInvitations!: EmployeeInvitationEntity[];
+}

@@ -4,10 +4,15 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 
 import { AttendancePolicyEntity } from '../../database/entities/attendance-policy.entity';
+import { AuditLogEntity } from '../../database/entities/audit-log.entity';
 import { DepartmentEntity } from '../../database/entities/department.entity';
 import { EmployeeEntity } from '../../database/entities/employee.entity';
+import { EmployeeInvitationEntity } from '../../database/entities/employee-invitation.entity';
+import { TenantEntity } from '../../database/entities/tenant.entity';
+import { UserEntity } from '../../database/entities/user.entity';
 import { WorkplaceEntity } from '../../database/entities/workplace.entity';
 import { EmployeeStatus, UserRole } from '../../domain/enums';
+import { EmailService } from '../../notifications/email.service';
 import { EmployeesService } from './employees.service';
 
 describe(EmployeesService.name, () => {
@@ -132,6 +137,60 @@ describe(EmployeesService.name, () => {
       }),
     ).rejects.toThrow(ConflictException);
   });
+
+  it('creates an employee invitation token and records email delivery status', async () => {
+    const invitationSave = jest
+      .fn()
+      .mockImplementation((invitation: EmployeeInvitationEntity) =>
+        Promise.resolve(
+          Object.assign(invitation, {
+            id: 'invitation-a',
+          }),
+        ),
+      );
+    const emailSend = jest.fn().mockResolvedValue({ status: 'LOGGED' });
+    const service = makeService({
+      employeeInvitationRepository: {
+        create: (invitation: Partial<EmployeeInvitationEntity>) =>
+          Object.assign(new EmployeeInvitationEntity(), invitation, {
+            id: 'invitation-a',
+          }),
+        find: jest.fn().mockResolvedValue([]),
+        save: invitationSave,
+      },
+      employeeRepository: {
+        findOneBy: jest.fn().mockResolvedValue(makeEmployee({})),
+      },
+      emailService: {
+        send: emailSend,
+      },
+    });
+
+    const response = await service.invite(
+      'tenant-a',
+      'employee-a',
+      'admin-user-a',
+      'admin-employee-a',
+    );
+
+    expect(response.deliveryStatus).toBe('LOGGED');
+    expect(response.emailSent).toBe(false);
+    expect(response.acceptUrl).toContain('/aceptar-invitacion?token=');
+    expect(invitationSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        employeeId: 'employee-a',
+        invitedByUserId: 'admin-user-a',
+        tenantId: 'tenant-a',
+        tokenHash: expect.any(String) as string,
+      }),
+    );
+    expect(emailSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: 'Empresa A te ha invitado a RegiHora',
+        to: 'ana@example.com',
+      }),
+    );
+  });
 });
 
 function makeService(overrides: {
@@ -139,9 +198,34 @@ function makeService(overrides: {
   workplaceRepository?: Partial<Repository<WorkplaceEntity>>;
   departmentRepository?: Partial<Repository<DepartmentEntity>>;
   attendancePolicyRepository?: Partial<Repository<AttendancePolicyEntity>>;
+  tenantRepository?: Partial<Repository<TenantEntity>>;
+  userRepository?: Partial<Repository<UserEntity>>;
+  employeeInvitationRepository?: Partial<Repository<EmployeeInvitationEntity>>;
+  auditLogRepository?: Partial<Repository<AuditLogEntity>>;
+  emailService?: Partial<EmailService>;
 }): EmployeesService {
   const relationRepository = {
     existsBy: jest.fn().mockResolvedValue(true),
+  };
+  const tenantRepository = {
+    findOneBy: jest.fn().mockResolvedValue(makeTenant()),
+  };
+  const invitationRepository = {
+    create: (invitation: Partial<EmployeeInvitationEntity>) =>
+      Object.assign(new EmployeeInvitationEntity(), invitation, {
+        id: 'invitation-a',
+      }),
+    find: jest.fn().mockResolvedValue([]),
+    save: jest.fn().mockImplementation((invitation: EmployeeInvitationEntity) =>
+      Promise.resolve(invitation),
+    ),
+  };
+  const auditLogRepository = {
+    create: (auditLog: Partial<AuditLogEntity>) =>
+      Object.assign(new AuditLogEntity(), auditLog),
+    save: jest.fn().mockImplementation((auditLog: AuditLogEntity) =>
+      Promise.resolve(auditLog),
+    ),
   };
 
   return new EmployeesService(
@@ -149,6 +233,22 @@ function makeService(overrides: {
     makeRepository(overrides.workplaceRepository ?? relationRepository),
     makeRepository(overrides.departmentRepository ?? relationRepository),
     makeRepository(overrides.attendancePolicyRepository ?? relationRepository),
+    makeRepository(overrides.tenantRepository ?? tenantRepository),
+    makeRepository(overrides.userRepository),
+    makeRepository(overrides.employeeInvitationRepository ?? invitationRepository),
+    makeRepository(overrides.auditLogRepository ?? auditLogRepository),
+    {
+      get: (key: string) =>
+        key === 'EMPLOYEE_INVITATION_TTL_HOURS'
+          ? 168
+          : key === 'WEBAPP_BASE_URL'
+            ? 'http://localhost:4204'
+            : undefined,
+    } as never,
+    {
+      send: jest.fn().mockResolvedValue({ status: 'LOGGED' }),
+      ...overrides.emailService,
+    } as EmailService,
   );
 }
 
@@ -178,6 +278,13 @@ function makeEmployee(overrides: Partial<EmployeeEntity>): EmployeeEntity {
     userId: null,
     workplaceId: null,
     ...overrides,
+  });
+}
+
+function makeTenant(): TenantEntity {
+  return Object.assign(new TenantEntity(), {
+    id: 'tenant-a',
+    legalName: 'Empresa A',
   });
 }
 

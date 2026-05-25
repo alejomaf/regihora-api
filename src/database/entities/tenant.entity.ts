@@ -16,6 +16,7 @@ import { AuditLogEntity } from './audit-log.entity';
 import { DepartmentEntity } from './department.entity';
 import { DeviceEntity } from './device.entity';
 import { EmployeeEntity } from './employee.entity';
+import { EmployeeInvitationEntity } from './employee-invitation.entity';
 import { WorkplaceEntity } from './workplace.entity';
 
 @Entity({ name: 'tenants' })
@@ -84,6 +85,9 @@ export class TenantEntity {
 
   @OneToMany(() => EmployeeEntity, (employee) => employee.tenant)
   employees!: EmployeeEntity[];
+
+  @OneToMany(() => EmployeeInvitationEntity, (invitation) => invitation.tenant)
+  employeeInvitations!: EmployeeInvitationEntity[];
 
   @OneToMany(() => DepartmentEntity, (department) => department.tenant)
   departments!: DepartmentEntity[];

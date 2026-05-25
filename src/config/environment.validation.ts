@@ -1,8 +1,10 @@
 export const nodeEnvironments = ['development', 'test', 'production'] as const;
 export const logLevels = ['error', 'warn', 'log', 'debug', 'verbose'] as const;
+export const emailDeliveryModes = ['disabled', 'log', 'smtp'] as const;
 
 export type NodeEnvironment = (typeof nodeEnvironments)[number];
 export type AppLogLevel = (typeof logLevels)[number];
+export type EmailDeliveryMode = (typeof emailDeliveryModes)[number];
 
 export type EnvironmentVariables = {
   NODE_ENV: NodeEnvironment;
@@ -24,6 +26,15 @@ export type EnvironmentVariables = {
   JWT_AUDIENCE: string;
   GOOGLE_OAUTH_CLIENT_ID: string | null;
   CORS_ALLOWED_ORIGINS: string[];
+  WEBAPP_BASE_URL: string;
+  EMPLOYEE_INVITATION_TTL_HOURS: number;
+  EMAIL_DELIVERY_MODE: EmailDeliveryMode;
+  EMAIL_FROM: string | null;
+  SMTP_HOST: string | null;
+  SMTP_PORT: number;
+  SMTP_SECURE: boolean;
+  SMTP_USER: string | null;
+  SMTP_PASSWORD: string | null;
   STRIPE_SECRET_KEY: string | null;
   STRIPE_WEBHOOK_SECRET: string | null;
   STRIPE_PRICE_ESSENTIAL: string | null;
@@ -61,6 +72,22 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
           'http://localhost:4304',
           'http://127.0.0.1:4304',
         ].join(',');
+  const emailDeliveryMode = parseEnumValue(
+    config.EMAIL_DELIVERY_MODE,
+    emailDeliveryModes,
+    'EMAIL_DELIVERY_MODE',
+    nodeEnvironment === 'production' ? 'disabled' : 'log',
+  );
+  const smtpHost = parseOptionalNonEmptyString(config.SMTP_HOST, 'SMTP_HOST');
+  const emailFrom = parseOptionalNonEmptyString(config.EMAIL_FROM, 'EMAIL_FROM');
+
+  if (emailDeliveryMode === 'smtp' && smtpHost === null) {
+    throw new Error('SMTP_HOST must be set when EMAIL_DELIVERY_MODE=smtp.');
+  }
+
+  if (emailDeliveryMode === 'smtp' && emailFrom === null) {
+    throw new Error('EMAIL_FROM must be set when EMAIL_DELIVERY_MODE=smtp.');
+  }
 
   return {
     CORS_ALLOWED_ORIGINS: parseStringList(
@@ -123,6 +150,26 @@ export function validateEnvironment(config: RawEnvironment): EnvironmentVariable
     GOOGLE_OAUTH_CLIENT_ID: parseOptionalNonEmptyString(
       config.GOOGLE_OAUTH_CLIENT_ID,
       'GOOGLE_OAUTH_CLIENT_ID',
+    ),
+    WEBAPP_BASE_URL: parseUrlString(
+      config.WEBAPP_BASE_URL,
+      'WEBAPP_BASE_URL',
+      'http://localhost:4204',
+    ),
+    EMPLOYEE_INVITATION_TTL_HOURS: parsePositiveInteger(
+      config.EMPLOYEE_INVITATION_TTL_HOURS,
+      'EMPLOYEE_INVITATION_TTL_HOURS',
+      168,
+    ),
+    EMAIL_DELIVERY_MODE: emailDeliveryMode,
+    EMAIL_FROM: emailFrom,
+    SMTP_HOST: smtpHost,
+    SMTP_PORT: parsePort(config.SMTP_PORT, 'SMTP_PORT', 587),
+    SMTP_SECURE: parseBoolean(config.SMTP_SECURE, 'SMTP_SECURE', false),
+    SMTP_USER: parseOptionalNonEmptyString(config.SMTP_USER, 'SMTP_USER'),
+    SMTP_PASSWORD: parseOptionalNonEmptyString(
+      config.SMTP_PASSWORD,
+      'SMTP_PASSWORD',
     ),
     LOG_LEVEL: logLevel,
     NODE_ENV: nodeEnvironment,
@@ -225,6 +272,20 @@ function parseNonEmptyString(
   }
 
   return rawValue.trim();
+}
+
+function parseUrlString(
+  value: unknown,
+  name: string,
+  fallback: string,
+): string {
+  const url = parseNonEmptyString(value, name, fallback);
+
+  try {
+    return new URL(url).toString().replace(/\/$/, '');
+  } catch {
+    throw new Error(`${name} must be a valid URL.`);
+  }
 }
 
 function parseStringList(value: unknown, fallback: string): string[] {

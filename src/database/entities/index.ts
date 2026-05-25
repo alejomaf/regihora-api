@@ -5,6 +5,7 @@ import { AttendancePolicyEntity } from './attendance-policy.entity';
 import { AuditLogEntity } from './audit-log.entity';
 import { DepartmentEntity } from './department.entity';
 import { DeviceEntity } from './device.entity';
+import { EmployeeInvitationEntity } from './employee-invitation.entity';
 import { EmployeeEntity } from './employee.entity';
 import { SessionEntity } from './session.entity';
 import { SupportTicketEntity } from './support-ticket.entity';
@@ -21,6 +22,7 @@ export const databaseEntities = [
   AuditLogEntity,
   DepartmentEntity,
   DeviceEntity,
+  EmployeeInvitationEntity,
   EmployeeEntity,
   SessionEntity,
   SupportTicketEntity,
@@ -38,6 +40,7 @@ export {
   AuditLogEntity,
   DepartmentEntity,
   DeviceEntity,
+  EmployeeInvitationEntity,
   EmployeeEntity,
   SessionEntity,
   SupportTicketEntity,

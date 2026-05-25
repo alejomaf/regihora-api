@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import {
   BadRequestException,
@@ -6,15 +6,22 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { parse as parseCsv } from 'csv-parse/sync';
-import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { FindOptionsWhere, ILike, IsNull, Repository } from 'typeorm';
 
 import { AttendancePolicyEntity } from '../../database/entities/attendance-policy.entity';
+import { AuditLogEntity } from '../../database/entities/audit-log.entity';
 import { DepartmentEntity } from '../../database/entities/department.entity';
 import { EmployeeEntity } from '../../database/entities/employee.entity';
+import { EmployeeInvitationEntity } from '../../database/entities/employee-invitation.entity';
+import { TenantEntity } from '../../database/entities/tenant.entity';
+import { UserEntity } from '../../database/entities/user.entity';
 import { WorkplaceEntity } from '../../database/entities/workplace.entity';
+import { EnvironmentVariables } from '../../config/environment.validation';
 import { EmployeeStatus, UserRole } from '../../domain/enums';
+import { EmailService } from '../../notifications/email.service';
 import { toEmployeeDto } from '../common/mappers';
 import { parseRoles } from '../common/role-parsing';
 import {
@@ -69,6 +76,16 @@ export class EmployeesService {
     private readonly departmentRepository: Repository<DepartmentEntity>,
     @InjectRepository(AttendancePolicyEntity)
     private readonly attendancePolicyRepository: Repository<AttendancePolicyEntity>,
+    @InjectRepository(TenantEntity)
+    private readonly tenantRepository: Repository<TenantEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
+    @InjectRepository(EmployeeInvitationEntity)
+    private readonly employeeInvitationRepository: Repository<EmployeeInvitationEntity>,
+    @InjectRepository(AuditLogEntity)
+    private readonly auditLogRepository: Repository<AuditLogEntity>,
+    private readonly configService: ConfigService<EnvironmentVariables, true>,
+    private readonly emailService: EmailService,
   ) {}
 
   async list(
@@ -233,16 +250,96 @@ export class EmployeesService {
   async invite(
     tenantId: string,
     employeeId: string,
+    actorUserId: string,
+    actorEmployeeId: string | null,
   ): Promise<EmployeeInvitationDto> {
     const employee = await this.getEntityOrFail(tenantId, employeeId);
+    const tenant = await this.tenantRepository.findOneBy({ id: tenantId });
 
-    if (employee.status !== EmployeeStatus.ACTIVE) {
+    if (tenant === null) {
+      throw new NotFoundException('Tenant not found.');
+    }
+
+    if (employee.status === EmployeeStatus.INACTIVE) {
+      throw new BadRequestException('Inactive employees cannot be invited.');
+    }
+
+    if (employee.status === EmployeeStatus.ACTIVE && employee.userId !== null) {
+      throw new ConflictException('Employee already has active access.');
+    }
+
+    const now = new Date();
+    const token = generateInvitationToken();
+    const expiresAt = new Date(
+      now.getTime() +
+        this.configService.get('EMPLOYEE_INVITATION_TTL_HOURS', { infer: true }) *
+          60 *
+          60 *
+          1_000,
+    );
+    const acceptUrl = buildInvitationAcceptUrl(
+      this.configService.get('WEBAPP_BASE_URL', { infer: true }),
+      token,
+    );
+
+    await this.revokePendingInvitations(tenantId, employee.id, now);
+
+    if (employee.status !== EmployeeStatus.INVITED) {
       employee.status = EmployeeStatus.INVITED;
       await this.employeeRepository.save(employee);
     }
 
+    const invitation = await this.employeeInvitationRepository.save(
+      this.employeeInvitationRepository.create({
+        acceptedAt: null,
+        email: employee.email,
+        employeeId: employee.id,
+        expiresAt,
+        invitedByUserId: actorUserId,
+        revokedAt: null,
+        sentAt: null,
+        tenantId,
+        tokenHash: hashInvitationToken(token),
+      }),
+    );
+    const existingUser = await this.userRepository.findOneBy({ email: employee.email });
+    const delivery = await this.emailService.send(
+      buildEmployeeInvitationEmail({
+        acceptUrl,
+        displayName: employee.displayName,
+        email: employee.email,
+        expiresAt,
+        hasExistingAccount: existingUser !== null && existingUser.passwordHash !== null,
+        tenantName: tenant.legalName,
+      }),
+    );
+
+    if (delivery.status === 'SENT') {
+      invitation.sentAt = new Date();
+      await this.employeeInvitationRepository.save(invitation);
+    }
+
+    await this.auditLogRepository.save(
+      this.auditLogRepository.create({
+        action: 'employee.invitation.created',
+        actorEmployeeId,
+        actorUserId,
+        entityId: employee.id,
+        entityType: 'employee',
+        metadata: {
+          deliveryStatus: delivery.status,
+          invitationId: invitation.id,
+        },
+        tenantId,
+      }),
+    );
+
     return {
+      acceptUrl,
+      deliveryStatus: delivery.status,
+      emailSent: delivery.status === 'SENT',
       employee: toEmployeeDto(employee),
+      expiresAt: expiresAt.toISOString(),
       invited: true,
     };
   }
@@ -250,6 +347,8 @@ export class EmployeesService {
   async importCsv(
     tenantId: string,
     request: EmployeeCsvImportRequestDto | string,
+    actorUserId?: string,
+    actorEmployeeId?: string | null,
   ): Promise<EmployeeCsvImportResponseDto> {
     const { csv, sendInvitations } = this.parseImportRequest(request);
     const records = this.parseCsvRecords(csv);
@@ -264,10 +363,24 @@ export class EmployeesService {
           record,
           sendInvitations,
         );
-        employees.push(toEmployeeDto(employee));
 
         if (sendInvitations && employee.status === EmployeeStatus.INVITED) {
+          if (actorUserId !== undefined) {
+            const invitation = await this.invite(
+              tenantId,
+              employee.id,
+              actorUserId,
+              actorEmployeeId ?? null,
+            );
+
+            employees.push(invitation.employee);
+          } else {
+            employees.push(toEmployeeDto(employee));
+          }
+
           invited += 1;
+        } else {
+          employees.push(toEmployeeDto(employee));
         }
       } catch (error) {
         errors.push({
@@ -492,6 +605,30 @@ export class EmployeesService {
 
     return employee;
   }
+
+  private async revokePendingInvitations(
+    tenantId: string,
+    employeeId: string,
+    revokedAt: Date,
+  ): Promise<void> {
+    const invitations = await this.employeeInvitationRepository.find({
+      where: {
+        acceptedAt: IsNull(),
+        employeeId,
+        revokedAt: IsNull(),
+        tenantId,
+      },
+    });
+
+    if (invitations.length === 0) {
+      return;
+    }
+
+    invitations.forEach((invitation) => {
+      invitation.revokedAt = revokedAt;
+    });
+    await this.employeeInvitationRepository.save(invitations);
+  }
 }
 
 function hashOptionalTurnstileCode(value: unknown): string | null {
@@ -510,6 +647,78 @@ function hashOptionalNullableTurnstileCode(value: unknown): string | null {
 
 function hashTurnstileCode(code: string): string {
   return createHash('sha256').update(code).digest('hex');
+}
+
+function generateInvitationToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function hashInvitationToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function buildInvitationAcceptUrl(webappBaseUrl: string, token: string): string {
+  const url = new URL('/aceptar-invitacion', `${webappBaseUrl}/`);
+
+  url.searchParams.set('token', token);
+
+  return url.toString();
+}
+
+function buildEmployeeInvitationEmail(input: {
+  acceptUrl: string;
+  displayName: string;
+  email: string;
+  expiresAt: Date;
+  hasExistingAccount: boolean;
+  tenantName: string;
+}): {
+  html: string;
+  subject: string;
+  text: string;
+  to: string;
+} {
+  const subject = `${input.tenantName} te ha invitado a RegiHora`;
+  const accountLine = input.hasExistingAccount
+    ? 'Ya tienes una cuenta de RegiHora: al aceptar se añadirá esta empresa a tu acceso actual.'
+    : 'Crea tu contraseña al aceptar la invitación para empezar a fichar.';
+  const expiresAt = new Intl.DateTimeFormat('es-ES', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Europe/Madrid',
+  }).format(input.expiresAt);
+  const text = [
+    `Hola ${input.displayName},`,
+    '',
+    `${input.tenantName} te ha invitado a RegiHora para registrar tu jornada laboral.`,
+    accountLine,
+    `La invitación caduca el ${expiresAt}.`,
+    '',
+    `Aceptar invitación: ${input.acceptUrl}`,
+  ].join('\n');
+  const html = `
+    <p>Hola ${escapeHtml(input.displayName)},</p>
+    <p>${escapeHtml(input.tenantName)} te ha invitado a RegiHora para registrar tu jornada laboral.</p>
+    <p>${escapeHtml(accountLine)}</p>
+    <p>La invitación caduca el ${escapeHtml(expiresAt)}.</p>
+    <p><a href="${escapeHtml(input.acceptUrl)}">Aceptar invitación</a></p>
+  `;
+
+  return {
+    html,
+    subject,
+    text,
+    to: input.email,
+  };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function getRecordValue(

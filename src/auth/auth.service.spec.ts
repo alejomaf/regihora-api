@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -10,6 +12,7 @@ import { Repository } from 'typeorm';
 import { EnvironmentVariables } from '../config/environment.validation';
 import { BillingStatus, EmployeeStatus, TenantPlan, UserRole } from '../domain/enums';
 import { EmployeeEntity } from '../database/entities/employee.entity';
+import { EmployeeInvitationEntity } from '../database/entities/employee-invitation.entity';
 import { SessionEntity } from '../database/entities/session.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
 import { UserEntity } from '../database/entities/user.entity';
@@ -534,6 +537,67 @@ describe(AuthService.name, () => {
     expect(oldSession.revokedAt).toBeInstanceOf(Date);
     expect(oldSession.lastUsedAt).toBe(oldSession.revokedAt);
   });
+
+  it('accepts an invitation by linking an existing account to a new tenant membership', async () => {
+    const token = 'employee-invitation-token-12345678901234567890';
+    const existingEmployee = makeEmployee(
+      'tenant-1',
+      'employee-1',
+      EmployeeStatus.ACTIVE,
+      [UserRole.EMPLOYEE],
+    );
+    const invitedEmployee = Object.assign(
+      makeEmployee('tenant-2', 'employee-2', EmployeeStatus.INVITED, [
+        UserRole.EMPLOYEE,
+      ]),
+      {
+        displayName: 'Ana Invitada',
+        email: 'owner@example.com',
+        userId: null,
+      },
+    );
+    const user = makeUser([existingEmployee, invitedEmployee]);
+    const invitation = Object.assign(new EmployeeInvitationEntity(), {
+      acceptedAt: null,
+      employee: invitedEmployee,
+      employeeId: invitedEmployee.id,
+      email: 'owner@example.com',
+      expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+      id: 'invitation-1',
+      revokedAt: null,
+      tenant: makeTenant({ id: 'tenant-2', legalName: 'Empresa B' }),
+      tenantId: 'tenant-2',
+      tokenHash: hashTestInvitationToken(token),
+    });
+    const sessions: SessionEntity[] = [];
+    const service = makeInvitationAcceptanceService({
+      invitation,
+      sessions,
+      tenants: [
+        makeTenant({ id: 'tenant-1', legalName: 'Empresa A' }),
+        makeTenant({ id: 'tenant-2', legalName: 'Empresa B' }),
+      ],
+      user,
+    });
+
+    const response = await service.acceptEmployeeInvitation(
+      { password: 'correct-password', token },
+      { ipAddress: '127.0.0.1', userAgent: chromeMacUserAgent },
+    );
+
+    expect(invitedEmployee.status).toBe(EmployeeStatus.ACTIVE);
+    expect(invitedEmployee.userId).toBe(user.id);
+    expect(invitation.acceptedAt).toBeInstanceOf(Date);
+    expect(response.memberships).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          employeeId: 'employee-2',
+          tenantId: 'tenant-2',
+          tenantName: 'Empresa B',
+        }),
+      ]),
+    );
+  });
 });
 
 function makeService(options: {
@@ -589,6 +653,7 @@ function makeService(options: {
     userRepository,
     sessionRepository,
     tenantRepository,
+    {} as Repository<EmployeeInvitationEntity>,
     makeConfigService(options.googleClientId ?? null),
     options.jwtService ?? makeJwtService(),
     makePasswordHasher(),
@@ -721,6 +786,7 @@ function makeRegistrationService(): {
       userRepository,
       sessionRepository,
       tenantRepository,
+      {} as Repository<EmployeeInvitationEntity>,
       makeConfigService(null),
       makeJwtService(),
       makePasswordHasher(),
@@ -728,6 +794,73 @@ function makeRegistrationService(): {
     tenants,
     users,
   };
+}
+
+function makeInvitationAcceptanceService(options: {
+  invitation: EmployeeInvitationEntity;
+  sessions: SessionEntity[];
+  tenants: TenantEntity[];
+  user: UserEntity;
+}): AuthService {
+  const userQueryBuilder: UserQueryBuilderStub = {
+    andWhere: () => userQueryBuilder,
+    getOne: () => Promise.resolve(options.user),
+    leftJoinAndSelect: () => userQueryBuilder,
+    where: () => userQueryBuilder,
+  };
+  const userRepository = {
+    createQueryBuilder: () => userQueryBuilder,
+    manager: {
+      transaction: <T>(
+        callback: (manager: { getRepository: (entity: unknown) => unknown }) => Promise<T>,
+      ) =>
+        callback({
+          getRepository: (entity: unknown) => {
+            if (entity === UserEntity) {
+              return userRepository;
+            }
+
+            if (entity === EmployeeEntity) {
+              return {
+                save: (employee: EmployeeEntity) => Promise.resolve(employee),
+              };
+            }
+
+            if (entity === EmployeeInvitationEntity) {
+              return {
+                findOne: () => Promise.resolve(options.invitation),
+                save: (invitation: EmployeeInvitationEntity) =>
+                  Promise.resolve(invitation),
+              };
+            }
+
+            throw new Error('Unexpected repository.');
+          },
+        }),
+    },
+  } as unknown as Repository<UserEntity>;
+  const sessionRepository = {
+    create: (session: Partial<SessionEntity>) =>
+      Object.assign(new SessionEntity(), session),
+    find: () => Promise.resolve(options.sessions),
+    save: (session: SessionEntity) =>
+      Promise.resolve(saveSession(options.sessions, session)),
+  } as unknown as Repository<SessionEntity>;
+  const tenantRepository = {
+    find: () => Promise.resolve(options.tenants),
+  } as unknown as Repository<TenantEntity>;
+
+  return new AuthService(
+    userRepository,
+    sessionRepository,
+    tenantRepository,
+    {
+      findOne: () => Promise.resolve(options.invitation),
+    } as unknown as Repository<EmployeeInvitationEntity>,
+    makeConfigService(null),
+    makeJwtService(),
+    makePasswordHasher(),
+  );
 }
 
 function matchesSessionWhere(
@@ -905,4 +1038,8 @@ function makeSession(options: {
     userAgent: options.userAgent ?? null,
     userId: options.user.id,
   });
+}
+
+function hashTestInvitationToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
