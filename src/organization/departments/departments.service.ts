@@ -130,7 +130,7 @@ export class DepartmentsService {
 
     return {
       ...baseWhere,
-      name: ILike(`%${search}%`),
+      name: ILike(`%${escapeLikePattern(search)}%`),
     };
   }
 
@@ -155,16 +155,21 @@ export class DepartmentsService {
     name: string,
     exceptDepartmentId?: string,
   ): Promise<void> {
-    const existingDepartment = await this.departmentRepository.findOneBy({
-      name: ILike(name),
-      tenantId,
-    });
+    const qb = this.departmentRepository
+      .createQueryBuilder('d')
+      .where('d.tenantId = :tenantId', { tenantId })
+      .andWhere('LOWER(d.name) = LOWER(:name)', { name });
 
-    if (
-      existingDepartment !== null &&
-      existingDepartment.id !== exceptDepartmentId
-    ) {
+    if (exceptDepartmentId !== undefined) {
+      qb.andWhere('d.id != :exceptDepartmentId', { exceptDepartmentId });
+    }
+
+    if ((await qb.getCount()) > 0) {
       throw new ConflictException('Department name already exists.');
     }
   }
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
 }

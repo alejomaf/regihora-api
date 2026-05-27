@@ -149,7 +149,7 @@ export class WorkplacesService {
 
     return {
       ...baseWhere,
-      name: ILike(`%${search}%`),
+      name: ILike(`%${escapeLikePattern(search)}%`),
     };
   }
 
@@ -174,18 +174,23 @@ export class WorkplacesService {
     name: string,
     exceptWorkplaceId?: string,
   ): Promise<void> {
-    const existingWorkplace = await this.workplaceRepository.findOneBy({
-      name: ILike(name),
-      tenantId,
-    });
+    const qb = this.workplaceRepository
+      .createQueryBuilder('w')
+      .where('w.tenantId = :tenantId', { tenantId })
+      .andWhere('LOWER(w.name) = LOWER(:name)', { name });
 
-    if (
-      existingWorkplace !== null &&
-      existingWorkplace.id !== exceptWorkplaceId
-    ) {
+    if (exceptWorkplaceId !== undefined) {
+      qb.andWhere('w.id != :exceptWorkplaceId', { exceptWorkplaceId });
+    }
+
+    if ((await qb.getCount()) > 0) {
       throw new ConflictException('Workplace name already exists.');
     }
   }
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
 }
 
 function validateTimezone(timezone: string): void {

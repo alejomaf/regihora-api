@@ -8,9 +8,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { parse as parseCsv } from 'csv-parse/sync';
-import { FindOptionsWhere, ILike, IsNull, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, ILike, IsNull, Repository } from 'typeorm';
 
 import { AttendancePolicyEntity } from '../../database/entities/attendance-policy.entity';
 import { AuditLogEntity } from '../../database/entities/audit-log.entity';
@@ -88,6 +88,8 @@ export class EmployeesService {
     private readonly auditLogRepository: Repository<AuditLogEntity>,
     private readonly configService: ConfigService<EnvironmentVariables, true>,
     private readonly emailService: EmailService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
   async list(
@@ -318,26 +320,33 @@ export class EmployeesService {
       token,
     );
 
-    await this.revokePendingInvitations(tenantId, employee.id, now);
+    const invitation = await this.dataSource.transaction(async (manager) => {
+      await manager.update(
+        EmployeeInvitationEntity,
+        { acceptedAt: IsNull(), employeeId: employee.id, revokedAt: IsNull(), tenantId },
+        { revokedAt: now },
+      );
 
-    if (employee.status !== EmployeeStatus.INVITED) {
-      employee.status = EmployeeStatus.INVITED;
-      await this.employeeRepository.save(employee);
-    }
+      if (employee.status !== EmployeeStatus.INVITED) {
+        employee.status = EmployeeStatus.INVITED;
+        await manager.save(EmployeeEntity, employee);
+      }
 
-    const invitation = await this.employeeInvitationRepository.save(
-      this.employeeInvitationRepository.create({
-        acceptedAt: null,
-        email: employee.email,
-        employeeId: employee.id,
-        expiresAt,
-        invitedByUserId: actorUserId,
-        revokedAt: null,
-        sentAt: null,
-        tenantId,
-        tokenHash: hashInvitationToken(token),
-      }),
-    );
+      return manager.save(
+        EmployeeInvitationEntity,
+        manager.create(EmployeeInvitationEntity, {
+          acceptedAt: null,
+          email: employee.email,
+          employeeId: employee.id,
+          expiresAt,
+          invitedByUserId: actorUserId,
+          revokedAt: null,
+          sentAt: null,
+          tenantId,
+          tokenHash: hashInvitationToken(token),
+        }),
+      );
+    });
     const existingUser = await this.userRepository.findOneBy({ email: employee.email });
     const delivery = await this.emailService.send(
       buildEmployeeInvitationEmail({
@@ -453,14 +462,16 @@ export class EmployeesService {
       return baseWhere;
     }
 
+    const escaped = escapeLikePattern(search);
+
     return [
       {
         ...baseWhere,
-        displayName: ILike(`%${search}%`),
+        displayName: ILike(`%${escaped}%`),
       },
       {
         ...baseWhere,
-        email: ILike(`%${search}%`),
+        email: ILike(`%${escaped}%`),
       },
     ];
   }
@@ -642,29 +653,10 @@ export class EmployeesService {
     return employee;
   }
 
-  private async revokePendingInvitations(
-    tenantId: string,
-    employeeId: string,
-    revokedAt: Date,
-  ): Promise<void> {
-    const invitations = await this.employeeInvitationRepository.find({
-      where: {
-        acceptedAt: IsNull(),
-        employeeId,
-        revokedAt: IsNull(),
-        tenantId,
-      },
-    });
+}
 
-    if (invitations.length === 0) {
-      return;
-    }
-
-    invitations.forEach((invitation) => {
-      invitation.revokedAt = revokedAt;
-    });
-    await this.employeeInvitationRepository.save(invitations);
-  }
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
 }
 
 function hashOptionalTurnstileCode(value: unknown): string | null {
