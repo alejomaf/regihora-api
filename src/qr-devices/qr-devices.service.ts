@@ -296,6 +296,7 @@ export class QrDevicesService {
     return {
       ...unsignedChallenge,
       signature: signQrChallenge(unsignedChallenge, device.deviceTokenHash),
+      workplaceId: device.workplaceId,
     };
   }
 

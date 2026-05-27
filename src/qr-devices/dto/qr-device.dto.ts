@@ -71,4 +71,5 @@ export type QrChallengeDto = {
   issuedAt: string;
   expiresAt: string;
   signature: string;
+  workplaceId: string;
 };
