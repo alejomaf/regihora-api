@@ -3,6 +3,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -201,6 +202,10 @@ export class QrDevicesService {
 
     if (device.status === DeviceStatus.ACTIVE) {
       throw new ConflictException('QR device is already enrolled.');
+    }
+
+    if (device.type !== DeviceType.FIXED_DYNAMIC_QR) {
+      throw new ForbiddenException('This enrollment flow is only available for QR screen devices.');
     }
 
     const deviceToken = createDeviceSecret(48);

@@ -43,7 +43,7 @@ export class WorkplacesController {
   }
 
   @Post()
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   create(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Body() request: WorkplaceCreateRequestDto,
@@ -61,7 +61,7 @@ export class WorkplacesController {
   }
 
   @Patch(':workplaceId')
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   update(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Param('workplaceId') workplaceId: string,
@@ -72,7 +72,7 @@ export class WorkplacesController {
 
   @Delete(':workplaceId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   delete(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Param('workplaceId') workplaceId: string,

@@ -50,7 +50,7 @@ export class QrDevicesController {
 
   @Post()
   @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   create(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Body() request: QrDeviceCreateRequestDto,
@@ -78,7 +78,7 @@ export class QrDevicesController {
 
   @Patch(':qrDeviceId')
   @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   update(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Param('qrDeviceId') qrDeviceId: string,
@@ -89,7 +89,7 @@ export class QrDevicesController {
 
   @Post(':qrDeviceId/enrollment-token')
   @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   createEnrollmentToken(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Param('qrDeviceId') qrDeviceId: string,
@@ -103,7 +103,7 @@ export class QrDevicesController {
   @Post(':qrDeviceId/revoke')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   revoke(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Param('qrDeviceId') qrDeviceId: string,

@@ -54,7 +54,7 @@ function createCorsOptions(allowedOrigins: string[]): CorsOptions {
         return;
       }
 
-      callback(new Error('Origin is not allowed by CORS.'), false);
+      callback(null, false);
     },
   };
 }

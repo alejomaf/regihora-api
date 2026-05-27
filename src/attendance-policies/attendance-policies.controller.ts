@@ -45,7 +45,7 @@ export class AttendancePoliciesController {
   }
 
   @Post()
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   create(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Body() request: AttendancePolicyCreateRequestDto,
@@ -66,7 +66,7 @@ export class AttendancePoliciesController {
   }
 
   @Patch(':attendancePolicyId')
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   update(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Param('attendancePolicyId') attendancePolicyId: string,
@@ -81,7 +81,7 @@ export class AttendancePoliciesController {
 
   @Delete(':attendancePolicyId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN)
   delete(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Param('attendancePolicyId') attendancePolicyId: string,

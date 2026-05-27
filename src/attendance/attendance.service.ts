@@ -638,8 +638,22 @@ function parseLocationEvidence(value: unknown): LocationEvidenceDto | null {
     throw new BadRequestException('locationEvidence.accuracyMeters is out of range.');
   }
 
-  if (Number.isNaN(Date.parse(capturedAt))) {
+  const capturedAtMs = Date.parse(capturedAt);
+
+  if (Number.isNaN(capturedAtMs)) {
     throw new BadRequestException('locationEvidence.capturedAt must be a date-time.');
+  }
+
+  const now = Date.now();
+  const maxAgeMs = 15 * 60 * 1_000;
+  const maxFutureMs = 60 * 1_000;
+
+  if (capturedAtMs < now - maxAgeMs) {
+    throw new BadRequestException('locationEvidence.capturedAt is too old (max 15 minutes).');
+  }
+
+  if (capturedAtMs > now + maxFutureMs) {
+    throw new BadRequestException('locationEvidence.capturedAt cannot be in the future.');
   }
 
   return {
