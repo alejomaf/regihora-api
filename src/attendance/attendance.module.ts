@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { config as loadDotEnv } from 'dotenv';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { getEnvironmentFilePaths } from '../config/environment-file-paths';
 import { validateEnvironment } from '../config/environment.validation';
 import { AttendanceEventEntity } from '../database/entities/attendance-event.entity';
@@ -49,7 +50,7 @@ export class AttendanceModule {
         ]),
       ],
       module: AttendanceModule,
-      providers: [AttendanceService, JwtAuthGuard],
+      providers: [AttendanceService, JwtAuthGuard, RolesGuard],
     };
   }
 }

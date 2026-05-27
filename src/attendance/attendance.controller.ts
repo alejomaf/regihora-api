@@ -11,7 +11,10 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 
+import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { UserRole } from '../domain/enums';
 import { CurrentTenant } from '../tenancy/decorators/current-tenant.decorator';
 import { TenantGuard } from '../tenancy/guards/tenant.guard';
 import type { CurrentTenantContext } from '../tenancy/types/current-tenant';
@@ -22,12 +25,13 @@ import {
 } from './dto/attendance-punch.dto';
 
 @Controller('v1/attendance')
-@UseGuards(JwtAuthGuard, TenantGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 
   @Post('punch')
   @HttpCode(HttpStatus.CREATED)
+  @Roles(UserRole.OWNER, UserRole.HR_ADMIN, UserRole.MANAGER, UserRole.EMPLOYEE)
   punch(
     @CurrentTenant() tenant: CurrentTenantContext,
     @Headers('idempotency-key') idempotencyKey: string | undefined,

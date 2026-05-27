@@ -473,6 +473,10 @@ export class AttendanceService {
     if (policy.geolocationRequired && locationEvidence === null) {
       throw new BadRequestException('locationEvidence is required by policy.');
     }
+
+    if (!policy.geolocationRequired && locationEvidence !== null) {
+      throw new BadRequestException('locationEvidence is not accepted when policy does not require geolocation.');
+    }
   }
 
   private validateIpAllowlist(

@@ -883,7 +883,9 @@ function getEmployeeDayKey(employeeId: string, localDate: string): string {
 }
 
 function csvEscape(value: string | number | boolean): string {
-  return `"${String(value).replaceAll('"', '""')}"`;
+  const str = String(value);
+  const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+  return `"${safe.replaceAll('"', '""')}"`;
 }
 
 function getExcelColumnName(columnNumber: number): string {
