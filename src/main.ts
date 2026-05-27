@@ -27,6 +27,7 @@ async function bootstrap(): Promise<void> {
   app.set('trust proxy', 1);
   app.useLogger(getEnabledLogLevels(logLevel));
   app.enableCors(createCorsOptions(allowedCorsOrigins));
+  app.use('/internal/admin', createRateLimitMiddleware(60, 60 * 1_000));
   app.use('/v1/auth', createRateLimitMiddleware(30, 15 * 60 * 1_000));
   app.use(createRateLimitMiddleware(300, 15 * 60 * 1_000));
   app.use(text({ limit: '1mb', type: ['text/csv', 'text/plain'] }));
