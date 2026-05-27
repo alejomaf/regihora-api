@@ -156,7 +156,7 @@ export class DepartmentsService {
     exceptDepartmentId?: string,
   ): Promise<void> {
     const existingDepartment = await this.departmentRepository.findOneBy({
-      name,
+      name: ILike(name),
       tenantId,
     });
 

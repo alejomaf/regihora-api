@@ -42,6 +42,11 @@ import {
   TurnstilePunchCreateRequestDto,
 } from './dto/attendance-punch.dto';
 import { isIpAllowed } from './ip-allowlist';
+import {
+  type AttendanceSessionState,
+  getAttendanceSessionState,
+  isActionAllowedForState,
+} from './session-state';
 
 type PunchContext = {
   currentTenant: CurrentTenantContext;
@@ -59,11 +64,6 @@ type ParsedPunchRequest = {
   qrChallenge: QrChallengePayload | null;
   locationEvidence: LocationEvidenceDto | null;
   deviceContext: DeviceContextDto;
-};
-
-type AttendanceSessionState = {
-  clockedIn: boolean;
-  onBreak: boolean;
 };
 
 type ValidatedQrChallenge = {
@@ -90,7 +90,6 @@ const allowedSourcesByMode: Record<AttendancePolicyMode, AttendanceSource[]> = {
     AttendanceSource.FIXED_DYNAMIC_QR,
   ],
   [AttendancePolicyMode.ONSITE_QR]: [
-    AttendanceSource.IN_PERSON,
     AttendanceSource.FIXED_DYNAMIC_QR,
   ],
   [AttendancePolicyMode.REMOTE]: [AttendanceSource.REMOTE],
@@ -861,46 +860,6 @@ function parseDateTime(value: string, name: string): Date {
   }
 
   return parsed;
-}
-
-function getAttendanceSessionState(
-  lastAction: PunchAction | undefined,
-): AttendanceSessionState {
-  switch (lastAction) {
-    case PunchAction.CLOCK_IN:
-    case PunchAction.BREAK_END:
-      return {
-        clockedIn: true,
-        onBreak: false,
-      };
-    case PunchAction.BREAK_START:
-      return {
-        clockedIn: true,
-        onBreak: true,
-      };
-    case PunchAction.CLOCK_OUT:
-    case undefined:
-      return {
-        clockedIn: false,
-        onBreak: false,
-      };
-  }
-}
-
-function isActionAllowedForState(
-  action: PunchAction,
-  state: AttendanceSessionState,
-): boolean {
-  switch (action) {
-    case PunchAction.CLOCK_IN:
-      return !state.clockedIn;
-    case PunchAction.BREAK_START:
-      return state.clockedIn && !state.onBreak;
-    case PunchAction.BREAK_END:
-      return state.clockedIn && state.onBreak;
-    case PunchAction.CLOCK_OUT:
-      return state.clockedIn && !state.onBreak;
-  }
 }
 
 function getNextTurnstileAction(state: AttendanceSessionState): PunchAction {

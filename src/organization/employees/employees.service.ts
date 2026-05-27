@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -22,6 +23,7 @@ import { WorkplaceEntity } from '../../database/entities/workplace.entity';
 import { EnvironmentVariables } from '../../config/environment.validation';
 import { EmployeeStatus, UserRole } from '../../domain/enums';
 import { EmailService } from '../../notifications/email.service';
+import type { CurrentTenantContext } from '../../tenancy/types/current-tenant';
 import { toEmployeeDto } from '../common/mappers';
 import { parseRoles } from '../common/role-parsing';
 import {
@@ -127,9 +129,10 @@ export class EmployeesService {
   }
 
   async create(
-    tenantId: string,
+    actor: CurrentTenantContext,
     request: EmployeeCreateRequestDto,
   ): Promise<EmployeeDto> {
+    const tenantId = actor.tenantId;
     const fields = {
       attendancePolicyId: parseOptionalString(
         request.attendancePolicyId,
@@ -146,6 +149,10 @@ export class EmployeesService {
       workplaceId:
         parseOptionalString(request.workplaceId, 'workplaceId', 80) ?? null,
     };
+
+    if (fields.roles.includes(UserRole.OWNER) && !actor.roles.includes(UserRole.OWNER)) {
+      throw new ForbiddenException('Only an owner can assign the OWNER role.');
+    }
 
     await this.ensureEmailAvailable(tenantId, fields.email);
     await this.ensureTurnstileCodeAvailable(tenantId, fields.turnstileCodeHash);
@@ -164,10 +171,11 @@ export class EmployeesService {
   }
 
   async update(
-    tenantId: string,
+    actor: CurrentTenantContext,
     employeeId: string,
     request: EmployeeUpdateRequestDto,
   ): Promise<EmployeeDto> {
+    const tenantId = actor.tenantId;
     const employee = await this.getEntityOrFail(tenantId, employeeId);
     const displayName = parseOptionalString(request.displayName, 'displayName', 160);
     const status = parseOptionalEnumValue(
@@ -201,6 +209,29 @@ export class EmployeesService {
       departmentId,
       workplaceId,
     };
+
+    if (roles !== undefined) {
+      if (roles.includes(UserRole.OWNER) && !actor.roles.includes(UserRole.OWNER)) {
+        throw new ForbiddenException('Only an owner can assign the OWNER role.');
+      }
+
+      const isRemovingOwnerRole =
+        employee.roles.includes(UserRole.OWNER) && !roles.includes(UserRole.OWNER);
+
+      if (isRemovingOwnerRole) {
+        const tenantEmployees = await this.employeeRepository.find({
+          select: ['id', 'roles'],
+          where: { status: EmployeeStatus.ACTIVE, tenantId },
+        });
+        const otherOwnerExists = tenantEmployees.some(
+          (e) => e.id !== employee.id && e.roles.includes(UserRole.OWNER),
+        );
+
+        if (!otherOwnerExists) {
+          throw new ForbiddenException('Cannot remove the last owner of the tenant.');
+        }
+      }
+    }
 
     await this.ensureRelationsBelongToTenant(tenantId, relationFields);
     await this.ensureTurnstileCodeAvailable(
@@ -240,8 +271,13 @@ export class EmployeesService {
     return toEmployeeDto(await this.employeeRepository.save(employee));
   }
 
-  async delete(tenantId: string, employeeId: string): Promise<void> {
+  async delete(actor: CurrentTenantContext, employeeId: string): Promise<void> {
+    const tenantId = actor.tenantId;
     const employee = await this.getEntityOrFail(tenantId, employeeId);
+
+    if (employee.roles.includes(UserRole.OWNER) && !actor.roles.includes(UserRole.OWNER)) {
+      throw new ForbiddenException('Only an owner can deactivate another owner.');
+    }
 
     employee.status = EmployeeStatus.INACTIVE;
     await this.employeeRepository.save(employee);

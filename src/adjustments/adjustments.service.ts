@@ -32,6 +32,7 @@ import {
   ResourceStatus,
   UserRole,
 } from '../domain/enums';
+import { getAttendanceSessionState, isActionAllowedForState } from '../attendance/session-state';
 import {
   getNextCursor,
   parseEnumValue,
@@ -128,6 +129,11 @@ export class AdjustmentsService {
     }
 
     const proposedPunch = parseProposedPunch(request.proposedPunch);
+
+    if (proposedPunch.occurredAt > new Date()) {
+      throw new BadRequestException('proposedPunch.occurredAt cannot be in the future.');
+    }
+
     const reason = parseRequiredString(request.reason, 'reason', 1000);
     const originalPunchId = parseOptionalString(
       request.originalPunchId,
@@ -201,6 +207,13 @@ export class AdjustmentsService {
       currentTenant.tenantId,
       adjustmentId,
     );
+
+    if (currentTenant.employeeId === adjustment.employeeId) {
+      throw new ForbiddenException('An employee cannot approve their own adjustment.');
+    }
+
+    await this.ensureValidShiftTransition(adjustment);
+
     const decisionReason =
       parseOptionalString(request.decisionReason, 'decisionReason', 1000) ?? null;
     const tenant = await this.getTenant(currentTenant.tenantId);
@@ -453,6 +466,26 @@ export class AdjustmentsService {
       originalLocalDate,
       timezone,
     );
+  }
+
+  private async ensureValidShiftTransition(
+    adjustment: AttendanceAdjustmentEntity,
+  ): Promise<void> {
+    const lastEvent = await this.eventRepository.findOne({
+      order: { occurredAt: 'DESC' },
+      where: {
+        employeeId: adjustment.employeeId,
+        eventType: AttendanceEventType.PUNCH,
+        tenantId: adjustment.tenantId,
+      },
+    });
+    const state = getAttendanceSessionState(lastEvent?.action);
+
+    if (!isActionAllowedForState(adjustment.proposedAction, state)) {
+      throw new ConflictException(
+        'Proposed punch action is not valid for the current session state.',
+      );
+    }
   }
 
   private async createAuditLog(

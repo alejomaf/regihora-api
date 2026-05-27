@@ -102,7 +102,7 @@ describe(EmployeesService.name, () => {
       },
     });
 
-    const response = await service.create('tenant-a', {
+    const response = await service.create({ tenantId: 'tenant-a', employeeId: 'actor-id', roles: [], userId: 'user-id' }, {
       displayName: 'Ana',
       email: 'ana@example.com',
       roles: [UserRole.EMPLOYEE],
@@ -129,7 +129,7 @@ describe(EmployeesService.name, () => {
     });
 
     await expect(
-      service.create('tenant-a', {
+      service.create({ tenantId: 'tenant-a', employeeId: 'actor-id', roles: [], userId: 'user-id' }, {
         displayName: 'Ana',
         email: 'ana@example.com',
         roles: [UserRole.EMPLOYEE],

@@ -53,7 +53,7 @@ export class EmployeesController {
     @CurrentTenant() tenant: CurrentTenantContext,
     @Body() request: EmployeeCreateRequestDto,
   ): Promise<EmployeeDto> {
-    return this.employeesService.create(tenant.tenantId, request);
+    return this.employeesService.create(tenant, request);
   }
 
   @Post('imports')
@@ -87,7 +87,7 @@ export class EmployeesController {
     @Param('employeeId') employeeId: string,
     @Body() request: EmployeeUpdateRequestDto,
   ): Promise<EmployeeDto> {
-    return this.employeesService.update(tenant.tenantId, employeeId, request);
+    return this.employeesService.update(tenant, employeeId, request);
   }
 
   @Delete(':employeeId')
@@ -97,7 +97,7 @@ export class EmployeesController {
     @CurrentTenant() tenant: CurrentTenantContext,
     @Param('employeeId') employeeId: string,
   ): Promise<void> {
-    return this.employeesService.delete(tenant.tenantId, employeeId);
+    return this.employeesService.delete(tenant, employeeId);
   }
 
   @Post(':employeeId/invite')

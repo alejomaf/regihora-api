@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -71,6 +72,7 @@ export class WorkplacesService {
     const timezone =
       parseOptionalString(request.timezone, 'timezone', 64) ?? 'Europe/Madrid';
 
+    validateTimezone(timezone);
     await this.ensureNameAvailable(tenantId, name);
 
     const workplace = this.workplaceRepository.create({
@@ -113,6 +115,7 @@ export class WorkplacesService {
     }
 
     if (timezone !== undefined) {
+      validateTimezone(timezone);
       workplace.timezone = timezone;
     }
 
@@ -172,7 +175,7 @@ export class WorkplacesService {
     exceptWorkplaceId?: string,
   ): Promise<void> {
     const existingWorkplace = await this.workplaceRepository.findOneBy({
-      name,
+      name: ILike(name),
       tenantId,
     });
 
@@ -182,5 +185,13 @@ export class WorkplacesService {
     ) {
       throw new ConflictException('Workplace name already exists.');
     }
+  }
+}
+
+function validateTimezone(timezone: string): void {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
+  } catch {
+    throw new BadRequestException('timezone must be a valid IANA timezone.');
   }
 }

@@ -174,6 +174,7 @@ export class AuthService {
       throw new BadRequestException('acceptTerms must be true.');
     }
 
+    validateSpanishTaxId(companyTaxId);
     validateTimezone(timezone, 'timezone');
 
     const created = await this.userRepository.manager.transaction(async (manager) => {
@@ -817,8 +818,9 @@ export class AuthService {
 
   private parseEmail(value: unknown): string {
     const email = this.parseNonEmptyString(value, 'email').toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-    if (!email.includes('@')) {
+    if (!emailRegex.test(email)) {
       throw new UnauthorizedException('Invalid email or password.');
     }
 
@@ -827,9 +829,10 @@ export class AuthService {
 
   private parsePublicEmail(value: unknown, name: string): string {
     const email = this.parsePublicString(value, name, 3, 320).toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-    if (!email.includes('@')) {
-      throw new BadRequestException(`${name} must be a valid email.`);
+    if (!emailRegex.test(email)) {
+      throw new BadRequestException(`${name} must be a valid email address.`);
     }
 
     return email;
@@ -840,6 +843,15 @@ export class AuthService {
 
     if (password.trim() !== password) {
       throw new BadRequestException('password must not start or end with whitespace.');
+    }
+
+    const hasLetter = /[a-zA-Z]/.test(password);
+    const hasDigitOrSymbol = /[\d!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password);
+
+    if (!hasLetter || !hasDigitOrSymbol) {
+      throw new BadRequestException(
+        'password must contain at least one letter and one digit or symbol.',
+      );
     }
 
     return password;
@@ -894,6 +906,21 @@ function validateTimezone(timezone: string, name: string): void {
     Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
   } catch {
     throw new BadRequestException(`${name} must be a valid IANA timezone.`);
+  }
+}
+
+function validateSpanishTaxId(taxId: string): void {
+  // NIF: 8 digits + control letter
+  const nifRegex = /^\d{8}[TRWAGMYFPDXBNJZSQVHLCKE]$/;
+  // NIE: X/Y/Z + 7 digits + control letter
+  const nieRegex = /^[XYZ]\d{7}[TRWAGMYFPDXBNJZSQVHLCKE]$/;
+  // CIF: letter + 7 digits + control char
+  const cifRegex = /^[ABCDEFGHJKLMNPQRSUVW]\d{7}[\dA-J]$/;
+
+  if (!nifRegex.test(taxId) && !nieRegex.test(taxId) && !cifRegex.test(taxId)) {
+    throw new BadRequestException(
+      'companyTaxId must be a valid Spanish NIF, NIE, or CIF.',
+    );
   }
 }
 
