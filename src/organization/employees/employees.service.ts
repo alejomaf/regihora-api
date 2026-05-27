@@ -165,7 +165,21 @@ export class EmployeesService {
       tenantId,
     });
 
-    return toEmployeeDto(await this.employeeRepository.save(employee));
+    const saved = await this.employeeRepository.save(employee);
+
+    await this.auditLogRepository.save(
+      this.auditLogRepository.create({
+        action: 'employee.created',
+        actorEmployeeId: actor.employeeId,
+        actorUserId: actor.userId,
+        entityId: saved.id,
+        entityType: 'employee',
+        metadata: { email: fields.email, roles: fields.roles },
+        tenantId,
+      }),
+    );
+
+    return toEmployeeDto(saved);
   }
 
   async get(tenantId: string, employeeId: string): Promise<EmployeeDto> {
@@ -270,7 +284,24 @@ export class EmployeesService {
       employee.turnstileCodeHash = turnstileCodeHash;
     }
 
-    return toEmployeeDto(await this.employeeRepository.save(employee));
+    const saved = await this.employeeRepository.save(employee);
+
+    await this.auditLogRepository.save(
+      this.auditLogRepository.create({
+        action: 'employee.updated',
+        actorEmployeeId: actor.employeeId,
+        actorUserId: actor.userId,
+        entityId: saved.id,
+        entityType: 'employee',
+        metadata: {
+          ...(roles !== undefined && { roles }),
+          ...(status !== undefined && { status }),
+        },
+        tenantId,
+      }),
+    );
+
+    return toEmployeeDto(saved);
   }
 
   async delete(actor: CurrentTenantContext, employeeId: string): Promise<void> {
@@ -283,6 +314,18 @@ export class EmployeesService {
 
     employee.status = EmployeeStatus.INACTIVE;
     await this.employeeRepository.save(employee);
+
+    await this.auditLogRepository.save(
+      this.auditLogRepository.create({
+        action: 'employee.deactivated',
+        actorEmployeeId: actor.employeeId,
+        actorUserId: actor.userId,
+        entityId: employee.id,
+        entityType: 'employee',
+        metadata: {},
+        tenantId,
+      }),
+    );
   }
 
   async invite(

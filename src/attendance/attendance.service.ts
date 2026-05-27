@@ -13,6 +13,7 @@ import { Repository } from 'typeorm';
 
 import { AttendanceEventEntity } from '../database/entities/attendance-event.entity';
 import { AttendancePolicyEntity } from '../database/entities/attendance-policy.entity';
+import { AuditLogEntity } from '../database/entities/audit-log.entity';
 import { DeviceEntity } from '../database/entities/device.entity';
 import { EmployeeEntity } from '../database/entities/employee.entity';
 import { TenantEntity } from '../database/entities/tenant.entity';
@@ -104,6 +105,8 @@ export class AttendanceService {
     private readonly employeeRepository: Repository<EmployeeEntity>,
     @InjectRepository(AttendancePolicyEntity)
     private readonly policyRepository: Repository<AttendancePolicyEntity>,
+    @InjectRepository(AuditLogEntity)
+    private readonly auditLogRepository: Repository<AuditLogEntity>,
     @InjectRepository(DeviceEntity)
     private readonly deviceRepository: Repository<DeviceEntity>,
     @InjectRepository(TenantEntity)
@@ -193,7 +196,24 @@ export class AttendanceService {
       workplaceId: workplace?.id ?? null,
     });
 
-    return toAttendancePunchDto(await this.attendanceEventRepository.save(event));
+    const savedEvent = await this.attendanceEventRepository.save(event);
+
+    await this.auditLogRepository.save(
+      this.auditLogRepository.create({
+        action: 'attendance.punched',
+        actorEmployeeId: context.currentTenant.employeeId,
+        actorUserId: context.currentTenant.userId,
+        entityId: savedEvent.id,
+        entityType: 'attendance_event',
+        metadata: {
+          action: parsedRequest.action,
+          source: parsedRequest.source,
+        },
+        tenantId: context.currentTenant.tenantId,
+      }),
+    );
+
+    return toAttendancePunchDto(savedEvent);
   }
 
   async turnstilePunch(

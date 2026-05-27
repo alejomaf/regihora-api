@@ -9,6 +9,7 @@ import { getEnvironmentFilePaths } from '../config/environment-file-paths';
 import { validateEnvironment } from '../config/environment.validation';
 import { AttendanceEventEntity } from '../database/entities/attendance-event.entity';
 import { AttendancePolicyEntity } from '../database/entities/attendance-policy.entity';
+import { AuditLogEntity } from '../database/entities/audit-log.entity';
 import { DeviceEntity } from '../database/entities/device.entity';
 import { EmployeeEntity } from '../database/entities/employee.entity';
 import { SessionEntity } from '../database/entities/session.entity';
@@ -42,6 +43,7 @@ export class AttendanceModule {
         TypeOrmModule.forFeature([
           AttendanceEventEntity,
           AttendancePolicyEntity,
+          AuditLogEntity,
           DeviceEntity,
           EmployeeEntity,
           SessionEntity,
