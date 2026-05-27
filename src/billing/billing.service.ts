@@ -107,7 +107,6 @@ export class BillingService {
     }
 
     tenant.billingStatus = BillingStatus.CHECKOUT_REQUIRED;
-    tenant.plan = plan;
     tenant.stripePriceId = priceId;
     await this.tenantRepository.save(tenant);
 
