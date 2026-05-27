@@ -2,7 +2,9 @@ import { Logger } from '@nestjs/common';
 import type { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { text } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import 'reflect-metadata';
 
 import { AppModule } from './app.module';
@@ -10,7 +12,7 @@ import { EnvironmentVariables } from './config/environment.validation';
 import { getEnabledLogLevels } from './logging/logger-levels';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     rawBody: true,
   });
@@ -22,8 +24,11 @@ async function bootstrap(): Promise<void> {
     infer: true,
   });
 
+  app.set('trust proxy', 1);
   app.useLogger(getEnabledLogLevels(logLevel));
   app.enableCors(createCorsOptions(allowedCorsOrigins));
+  app.use('/v1/auth', createRateLimitMiddleware(30, 15 * 60 * 1_000));
+  app.use(createRateLimitMiddleware(300, 15 * 60 * 1_000));
   app.use(text({ limit: '1mb', type: ['text/csv', 'text/plain'] }));
   app.enableShutdownHooks();
 
@@ -33,6 +38,32 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap();
+
+type RateLimitEntry = { count: number; resetAt: number };
+
+function createRateLimitMiddleware(maxRequests: number, windowMs: number) {
+  const buckets = new Map<string, RateLimitEntry>();
+
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    const now = Date.now();
+    const entry = buckets.get(ip);
+
+    if (entry === undefined || now > entry.resetAt) {
+      buckets.set(ip, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+
+    if (entry.count >= maxRequests) {
+      res.status(429).json({ message: 'Too many requests. Please try again later.' });
+      return;
+    }
+
+    entry.count += 1;
+    next();
+  };
+}
 
 function createCorsOptions(allowedOrigins: string[]): CorsOptions {
   return {
